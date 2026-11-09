@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 struct ComposerView: View {
     @EnvironmentObject var model: AppModel
     @State private var text = ""
+    /// Bumped whenever the app (not your typing) changes the text, so only those changes are pushed into the box.
+    @State private var textTick = 0
     @State private var height: CGFloat = 18
     @State private var files: [URL] = []
     @State private var broadcast = false
@@ -100,7 +102,7 @@ struct ComposerView: View {
                             .allowsHitTesting(false)
                     }
                     ComposerTextView(text: $text, height: $height, caret: $caret, caretTarget: $caretTarget,
-                                     focusTick: model.focusComposerTick,
+                                     textTick: textTick, focusTick: model.focusComposerTick,
                                      onSubmit: submit, onFiles: { files += $0 },
                                      onKey: { mentionKey($0) },
                                      onTab: {
@@ -174,7 +176,7 @@ struct ComposerView: View {
         .onChange(of: model.composerInsert) { s in
             guard let s else { return }
             model.closeAssistant()
-            text = s
+            setText(s)
             model.composerInsert = nil
         }
         .onChange(of: model.droppedFiles) { urls in
@@ -183,14 +185,14 @@ struct ComposerView: View {
             model.droppedFiles = nil
         }
         .onChange(of: model.editing) { m in
-            text = m.map { Mrkdwn.decode($0.text ?? "") } ?? model.current.map { model.draft(for: $0) } ?? ""
+            setText(m.map { Mrkdwn.decode($0.text ?? "") } ?? model.current.map { model.draft(for: $0) } ?? "")
         }
         .onChange(of: model.current) { new in
             // Drafts: stash what was typed for the old conversation, restore the new one's.
             if let old = draftRef, model.editing == nil { model.setDraft(text, for: old) }
             files = []
             broadcast = false
-            text = new.map { model.draft(for: $0) } ?? ""
+            setText(new.map { model.draft(for: $0) } ?? "")
             draftRef = new
         }
         .onChange(of: mentionList.isEmpty) { empty in model.composerPopupOpen = !empty }
@@ -203,7 +205,7 @@ struct ComposerView: View {
         }
         .onAppear {
             draftRef = model.current
-            if let ref = model.current, text.isEmpty { text = model.draft(for: ref) }
+            if let ref = model.current, text.isEmpty { setText(model.draft(for: ref)) }
         }
     }
 
@@ -232,7 +234,7 @@ struct ComposerView: View {
             }
             sending = false
             if ok {
-                text = ""
+                setText("")
                 files = []
                 broadcast = false
             }
@@ -243,7 +245,7 @@ struct ComposerView: View {
         let body = text, bc = broadcast
         Task {
             if await model.schedule(text: body, at: date, broadcast: bc) {
-                text = ""
+                setText("")
                 broadcast = false
             }
         }
@@ -265,13 +267,18 @@ struct ComposerView: View {
     private func insertMention(_ s: MentionSuggestion) {
         guard let m = mention else { return }
         let ins = "@\(s.insert) "
-        text = (text as NSString).replacingCharacters(in: m.range, with: ins)
+        setText((text as NSString).replacingCharacters(in: m.range, with: ins))
         caretTarget = m.range.location + (ins as NSString).length
         mentionIndex = 0
     }
 
+    private func setText(_ t: String) {
+        text = t
+        textTick += 1
+    }
+
     private func complete(_ c: SlashCommands.Command) {
-        text = "/" + c.name + " "
+        setText("/" + c.name + " ")
         model.focusComposerTick += 1
     }
 
@@ -290,6 +297,7 @@ struct ComposerTextView: NSViewRepresentable {
     @Binding var height: CGFloat
     @Binding var caret: Int
     @Binding var caretTarget: Int?
+    var textTick: Int
     var focusTick: Int
     var onSubmit: () -> Void
     var onFiles: ([URL]) -> Void
@@ -336,9 +344,15 @@ struct ComposerTextView: NSViewRepresentable {
     func updateNSView(_ sv: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let tv = sv.documentView as? SubmitTextView else { return }
-        if tv.string != text {
-            tv.string = text
-            context.coordinator.recalc(tv)
+        // Only push text the app changed (send, draft, mention, edit). Never overwrite what you're typing with
+        // SwiftUI's copy, which can lag a keystroke behind and used to garble fast typing.
+        if context.coordinator.lastTextTick != textTick {
+            context.coordinator.lastTextTick = textTick
+            if tv.string != text {
+                tv.string = text
+                if caretTarget == nil { tv.setSelectedRange(NSRange(location: (text as NSString).length, length: 0)) }
+                context.coordinator.recalc(tv)
+            }
         }
         if let t = caretTarget {
             tv.setSelectedRange(NSRange(location: min(t, (tv.string as NSString).length), length: 0))
@@ -356,13 +370,15 @@ struct ComposerTextView: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ComposerTextView
         var lastFocus = -1
+        var lastTextTick = -1
 
         init(_ p: ComposerTextView) { parent = p }
 
         func textDidChange(_ n: Notification) {
             guard let tv = n.object as? NSTextView else { return }
             parent.text = tv.string
-            parent.caret = tv.selectedRange().location
+            let loc = tv.selectedRange().location
+            if parent.caret != loc { parent.caret = loc }
             recalc(tv)
         }
 
