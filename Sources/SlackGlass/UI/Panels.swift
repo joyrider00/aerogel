@@ -167,6 +167,7 @@ final class HUDController {
         // Escape peels back one layer at a time.
         if e.keyCode == 53 {
             if ImageViewer.shared.isVisible { ImageViewer.shared.close() }
+            else if model.composerPopupOpen { model.composerDismissTick += 1 }
             else if model.switcherOpen { model.switcherOpen = false }
             else if model.assistantMode { model.closeAssistant() }
             else if model.editing != nil { model.editing = nil }

@@ -26,7 +26,7 @@ Slack Glass is a small macOS menu-bar app built on Slack's public API. It's free
 - **An Activity inbox.** DMs, group DMs, @mentions, your keywords, and new replies in threads you've posted in, grouped by thread. Opening an item clears it, and so does replying from anywhere, including Slack itself.
 - **Chats.** Browse and search every channel and DM, and use the arrow keys to move through the results. When nothing needs you, this is what you see.
 - **Search.** Search every message you can see in Slack, using Slack's own modifiers (`from:@maya`, `in:#eng`, `has:link`). Open a result and it jumps to that message in its thread or channel.
-- **Reply like Slack.** Enter sends, Shift-Enter adds a new line, and `@name` mentions resolve. "Also send to #channel" works too. You can attach files by pasting, by dragging them (screenshots included), or with the paperclip.
+- **Reply like Slack.** Enter sends, Shift-Enter adds a new line, and typing `@` suggests people to mention. "Also send to #channel" works too. You can attach files by pasting, by dragging them (screenshots included), or with the paperclip.
 - **Schedule, snooze and drafts.** Schedule a message for later. Snooze an item until it matters. Whatever you half-typed in a conversation is still there when you come back.
 - **React, edit, delete and copy links.** Hover a message to get quick reactions and the full emoji picker, including your workspace's custom emoji.
 - **Images and presence.** Click an image to see it full size; you can copy it or save it to Downloads. Green dots show who's online.
@@ -91,7 +91,8 @@ Slack Glass talks to Slack through a small private Slack app that **you** create
 
 ### Replying
 
-- **Enter** sends. **Shift-Enter** starts a new line. Type `@` and a name to mention someone.
+- **Enter** sends. **Shift-Enter** starts a new line.
+- **Mention someone** by typing `@` and part of their name. Suggestions start with the people in the conversation, then people you've talked to recently. Use ↑↓ and Enter or Tab (or click) to insert one. In channels, `@here`, `@channel` and `@everyone` are offered too.
 - **Attach files** by pasting them (⌘V), dragging them onto the conversation, or clicking the paperclip. You can drag the screenshot preview that appears after ⌘⇧4 straight in.
 - **Schedule a message** with the clock button next to Send: in 1 hour, in 3 hours, tomorrow at 9 AM, Monday at 9 AM, or a custom time.
 - **Drafts** are saved per conversation as you type. A ✎ in the inbox marks conversations with an unsent draft.

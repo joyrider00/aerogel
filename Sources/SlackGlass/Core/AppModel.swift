@@ -59,6 +59,9 @@ final class AppModel: ObservableObject {
     var searchTask: Task<Void, Never>?
     /// The message to scroll to and highlight after opening a search result.
     @Published var focusTs: String?
+    /// The composer's @mention popup is showing (Esc closes it before anything else).
+    @Published var composerPopupOpen = false
+    @Published var composerDismissTick = 0
     /// The conversation open most recently, reopened when the panel comes back.
     private(set) var lastConversation: ConversationRef?
     @Published var chatQuery = ""
@@ -857,7 +860,8 @@ final class AppModel: ObservableObject {
     }
 
     /// Turns "@maya" into "<@U123>" for known users so mentions actually ping.
-    private func encodeMentions(_ text: String) -> String {
+    private func encodeMentions(_ raw: String) -> String {
+        let text = encodeDisplayNameMentions(raw)
         guard let re = try? NSRegularExpression(pattern: #"(?<![<\w])@([\w.\-]+)"#) else { return text }
         let ns = text as NSString
         var out = text

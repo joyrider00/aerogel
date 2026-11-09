@@ -12,6 +12,20 @@ struct ComposerView: View {
     @State private var draftRef: ConversationRef?
     @State private var customSchedule = false
     @State private var customDate = Date().addingTimeInterval(3600)
+    @State private var caret = 0
+    @State private var caretTarget: Int?
+    @State private var mentionIndex = 0
+    @State private var dismissedMentionAt: Int?
+
+    /// The "@name" being typed at the caret, unless Esc dismissed it.
+    private var mention: (range: NSRange, query: String)? {
+        guard let t = AppModel.mentionToken(in: text, caret: caret), t.range.location != dismissedMentionAt else { return nil }
+        return t
+    }
+
+    private var mentionList: [MentionSuggestion] {
+        mention.map { model.mentionSuggestions($0.query) } ?? []
+    }
 
     private var isThread: Bool { model.current?.threadTs != nil }
 
@@ -50,6 +64,9 @@ struct ComposerView: View {
                     }
                 }
             }
+            if !mentionList.isEmpty {
+                MentionPopup(list: mentionList, index: mentionIndex, onPick: insertMention)
+            }
             let commands = model.editing == nil ? SlashCommands.matching(text) : []
             if !commands.isEmpty {
                 VStack(alignment: .leading, spacing: 1) {
@@ -82,8 +99,10 @@ struct ComposerView: View {
                         Text(placeholder).font(.system(size: 13)).foregroundStyle(.secondary)
                             .allowsHitTesting(false)
                     }
-                    ComposerTextView(text: $text, height: $height, focusTick: model.focusComposerTick,
+                    ComposerTextView(text: $text, height: $height, caret: $caret, caretTarget: $caretTarget,
+                                     focusTick: model.focusComposerTick,
                                      onSubmit: submit, onFiles: { files += $0 },
+                                     onKey: { mentionKey($0) },
                                      onTab: {
                                          guard let first = SlashCommands.matching(text).first else { return false }
                                          complete(first)
@@ -174,7 +193,12 @@ struct ComposerView: View {
             text = new.map { model.draft(for: $0) } ?? ""
             draftRef = new
         }
+        .onChange(of: mentionList.isEmpty) { empty in model.composerPopupOpen = !empty }
+        .onChange(of: mention?.query) { _ in mentionIndex = 0 }
+        .onChange(of: model.composerDismissTick) { _ in dismissedMentionAt = mention?.range.location }
+        .onDisappear { model.composerPopupOpen = false }
         .onChange(of: text) { t in
+            if AppModel.mentionToken(in: t, caret: min(caret, (t as NSString).length)) == nil { dismissedMentionAt = nil }
             if model.editing == nil, let ref = model.current { model.setDraft(t, for: ref) }
         }
         .onAppear {
@@ -225,6 +249,27 @@ struct ComposerView: View {
         }
     }
 
+    /// ↑↓ move through the @mention popup; Enter or Tab inserts. Returns true when the key was used.
+    private func mentionKey(_ code: UInt16) -> Bool {
+        guard let m = mention else { return false }
+        let list = model.mentionSuggestions(m.query)
+        guard !list.isEmpty else { return false }
+        switch code {
+        case 125: mentionIndex = min(mentionIndex + 1, list.count - 1); return true
+        case 126: mentionIndex = max(mentionIndex - 1, 0); return true
+        case 36, 76, 48: insertMention(list[min(mentionIndex, list.count - 1)]); return true
+        default: return false
+        }
+    }
+
+    private func insertMention(_ s: MentionSuggestion) {
+        guard let m = mention else { return }
+        let ins = "@\(s.insert) "
+        text = (text as NSString).replacingCharacters(in: m.range, with: ins)
+        caretTarget = m.range.location + (ins as NSString).length
+        mentionIndex = 0
+    }
+
     private func complete(_ c: SlashCommands.Command) {
         text = "/" + c.name + " "
         model.focusComposerTick += 1
@@ -243,9 +288,12 @@ struct ComposerView: View {
 struct ComposerTextView: NSViewRepresentable {
     @Binding var text: String
     @Binding var height: CGFloat
+    @Binding var caret: Int
+    @Binding var caretTarget: Int?
     var focusTick: Int
     var onSubmit: () -> Void
     var onFiles: ([URL]) -> Void
+    var onKey: (UInt16) -> Bool = { _ in false }
     var onTab: () -> Bool = { false }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -274,6 +322,7 @@ struct ComposerTextView: NSViewRepresentable {
         tv.onSubmit = { [weak coordinator = context.coordinator] in coordinator?.parent.onSubmit() }
         tv.onFiles = { [weak coordinator = context.coordinator] in coordinator?.parent.onFiles($0) }
         tv.onTab = { [weak coordinator = context.coordinator] in coordinator?.parent.onTab() ?? false }
+        tv.onKey = { [weak coordinator = context.coordinator] in coordinator?.parent.onKey($0) ?? false }
         tv.registerForDraggedTypes(DropReader.types)
 
         let sv = NSScrollView()
@@ -290,6 +339,10 @@ struct ComposerTextView: NSViewRepresentable {
         if tv.string != text {
             tv.string = text
             context.coordinator.recalc(tv)
+        }
+        if let t = caretTarget {
+            tv.setSelectedRange(NSRange(location: min(t, (tv.string as NSString).length), length: 0))
+            DispatchQueue.main.async { caretTarget = nil; caret = t }
         }
         if context.coordinator.lastFocus != focusTick {
             context.coordinator.lastFocus = focusTick
@@ -309,7 +362,14 @@ struct ComposerTextView: NSViewRepresentable {
         func textDidChange(_ n: Notification) {
             guard let tv = n.object as? NSTextView else { return }
             parent.text = tv.string
+            parent.caret = tv.selectedRange().location
             recalc(tv)
+        }
+
+        func textViewDidChangeSelection(_ n: Notification) {
+            guard let tv = n.object as? NSTextView else { return }
+            let loc = tv.selectedRange().location
+            if parent.caret != loc { DispatchQueue.main.async { self.parent.caret = loc } }
         }
 
         func recalc(_ tv: NSTextView) {
@@ -327,8 +387,11 @@ final class SubmitTextView: NSTextView {
     var onSubmit: (() -> Void)?
     var onFiles: (([URL]) -> Void)?
     var onTab: (() -> Bool)?
+    var onKey: ((UInt16) -> Bool)?
 
     override func keyDown(with e: NSEvent) {
+        let plain = e.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty
+        if plain, !hasMarkedText(), [125, 126, 36, 76, 48].contains(e.keyCode), onKey?(e.keyCode) == true { return }
         if e.keyCode == 48, onTab?() == true { return }
         let isReturn = e.keyCode == 36 || e.keyCode == 76
         let flags = e.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -364,5 +427,41 @@ final class SubmitTextView: NSTextView {
         guard DropReader.canRead(pb) else { return super.performDragOperation(sender) }
         DropReader.read(pb) { [weak self] urls in if !urls.isEmpty { self?.onFiles?(urls) } }
         return true
+    }
+}
+
+/// The @mention suggestions above the reply box.
+private struct MentionPopup: View {
+    @EnvironmentObject var model: AppModel
+    let list: [MentionSuggestion]
+    let index: Int
+    let onPick: (MentionSuggestion) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(list.enumerated()), id: \.element.id) { i, s in
+                row(s, selected: i == min(index, list.count - 1))
+            }
+            Text("↑↓ choose · Enter or Tab inserts · Esc dismisses")
+                .font(.system(size: 9.5)).foregroundStyle(.secondary).padding(.horizontal, 8).padding(.top, 2)
+        }
+    }
+
+    private func row(_ s: MentionSuggestion, selected: Bool) -> some View {
+        HStack(spacing: 8) {
+            if let u = s.userID {
+                Avatar(url: model.avatar(u), name: s.title, size: 20, online: model.isOnline(u))
+            } else {
+                Image(systemName: "megaphone.fill").font(.system(size: 10))
+                    .foregroundStyle(.secondary).frame(width: 20, height: 20)
+            }
+            Text(s.title).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
+            Text(s.detail).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(selected ? 0.14 : 0)))
+        .contentShape(Rectangle())
+        .onTapGesture { onPick(s) }
     }
 }
