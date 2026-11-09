@@ -65,14 +65,16 @@ struct InboxView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
-            if model.showChats {
+            if model.showSearch {
+                SearchView()
+            } else if model.showChats {
                 ChatsList()
             } else if model.inbox.isEmpty {
                 emptyState
             } else {
                 FitScroll(maxHeight: 620) { rows }
             }
-            if !model.showChats && !model.snoozed.isEmpty {
+            if !model.showChats && !model.showSearch && !model.snoozed.isEmpty {
                 Menu {
                     ForEach(model.snoozed) { s in
                         Button("\(model.userName(s.user)): \(model.plain(s.text).prefix(40))  ·  \(AppModel.shortDate(s.snoozeUntil ?? Date()))") {
@@ -97,13 +99,17 @@ struct InboxView: View {
     private var header: some View {
         HStack(spacing: 4) {
             Circle().fill(statusColor).frame(width: 7, height: 7).help(statusHelp)
-            tab("NEEDS YOU" + (model.inbox.isEmpty ? "" : " \(model.inbox.count)"), selected: !model.showChats) {
+            tab("NEEDS YOU" + (model.inbox.isEmpty ? "" : " \(model.inbox.count)"),
+                selected: !model.showChats && !model.showSearch) {
                 model.showChats = false
+                model.showSearch = false
             }
-            tab("CHATS", selected: model.showChats) {
+            tab("CHATS", selected: model.showChats && !model.showSearch) {
                 model.showChats = true
+                model.showSearch = false
                 model.chatQuery = ""
             }
+            tab("SEARCH", selected: model.showSearch) { model.openSearch() }
             if model.isDemo {
                 Text("DEMO").font(.system(size: 9, weight: .bold)).padding(.horizontal, 5).padding(.vertical, 1)
                     .background(Capsule().fill(.purple.opacity(0.5)))
@@ -513,5 +519,130 @@ struct ChatRow: View {
                 .frame(width: 24, height: 24)
                 .glassChip(radius: 7, opacity: 0.1)
         }
+    }
+}
+
+// MARK: - Search (messages across Slack)
+
+struct SearchView: View {
+    @EnvironmentObject var model: AppModel
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "text.magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
+                TextField("Search messages", text: $model.searchQuery)
+                    .textFieldStyle(.plain).font(.system(size: 12.5))
+                    .focused($focused)
+                    .onChange(of: model.searchQuery) { _ in model.searchSoon() }
+                    .onChange(of: focused) { model.searchFocused = $0 }
+                if model.searching {
+                    ProgressView().controlSize(.mini)
+                } else if !model.searchQuery.isEmpty {
+                    Button { model.searchQuery = ""; model.searchFocusTick += 1 } label: {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .glassChip(radius: 10, opacity: 0.08)
+
+            FlowLayout(spacing: 4) {
+                ForEach(model.searchFilters, id: \.token) { f in
+                    let on = model.hasSearchToken(f.token)
+                    Text(f.label)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(on ? .primary : .secondary)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(.white.opacity(on ? 0.22 : 0.07)))
+                        .contentShape(Capsule())
+                        .onTapGesture { model.toggleSearchToken(f.token) }
+                        .help(f.token)
+                }
+            }
+
+            content
+        }
+        .padding(.horizontal, 2)
+        .onAppear { DispatchQueue.main.async { focused = true } }
+        .onChange(of: model.searchFocusTick) { _ in focused = true }
+        .onDisappear { model.searchFocused = false }
+    }
+
+    @ViewBuilder private var content: some View {
+        if model.searchError == "missing_scope" {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Search needs one more Slack permission").font(.system(size: 12, weight: .semibold))
+                Text("In your Slack app's settings, open **OAuth & Permissions → User Token Scopes**, add **search:read**, then click **Reinstall to Workspace**. The token normally stays the same; if the page shows a different one, paste it into Settings.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button("Open my Slack apps ↗") { NSWorkspace.shared.open(URL(string: "https://api.slack.com/apps")!) }
+                    .controlSize(.small)
+            }
+            .padding(10)
+        } else if let e = model.searchError {
+            Text(e).font(.system(size: 11)).foregroundStyle(.orange).padding(10)
+        } else if model.searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+            Text("Search every message you can see in Slack. Slack's modifiers work too: **from:@maya**, **in:#eng**, **has:link**, **before:2026-01-01**, **\"exact phrase\"**.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8).padding(.top, 4)
+        } else if model.searchResults.isEmpty && !model.searching && !model.searchedQuery.isEmpty {
+            Text("No messages match.").font(.system(size: 11.5)).foregroundStyle(.secondary).padding(10)
+        } else {
+            if model.searchTotal > 0 {
+                Text(model.searchTotal > model.searchResults.count
+                     ? "\(model.searchResults.count) newest of \(model.searchTotal)" : "\(model.searchTotal) results")
+                    .font(.system(size: 9.5, weight: .semibold)).tracking(0.6).foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+            }
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        ForEach(Array(model.searchResults.enumerated()), id: \.element.id) { i, h in
+                            SearchRow(hit: h, highlighted: i == model.searchIndex && model.searchFocused)
+                                .id(h.id)
+                        }
+                    }
+                }
+                .frame(maxHeight: 500)
+                .onChange(of: model.searchIndex) { i in
+                    if model.searchResults.indices.contains(i) { proxy.scrollTo(model.searchResults[i].id, anchor: .center) }
+                }
+            }
+        }
+    }
+}
+
+struct SearchRow: View {
+    @EnvironmentObject var model: AppModel
+    let hit: SearchHit
+    var highlighted = false
+    @State private var hover = false
+
+    private var isOpen: Bool { model.focusTs == hit.ts && model.current?.channel == hit.channel }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Avatar(url: model.avatar(hit.user), name: model.hitAuthor(hit), size: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 5) {
+                    Text(model.hitAuthor(hit)).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                    Text(model.hitTitle(hit) + (hit.threadTs != nil ? " · thread" : ""))
+                        .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text(TimeFormat.relative(hit.date)).font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+                Text(model.render(hit.text)).font(.system(size: 12)).lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(.white.opacity(isOpen || highlighted ? 0.18 : hover ? 0.08 : 0)))
+        .contentShape(Rectangle())
+        .onHover { hover = $0 }
+        .onTapGesture { model.openHit(hit) }
     }
 }

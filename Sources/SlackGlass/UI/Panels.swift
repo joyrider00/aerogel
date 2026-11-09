@@ -121,7 +121,10 @@ final class HUDController {
     func show(_ ref: ConversationRef? = nil, focus: Bool = true) {
         if let ref { model.open(ref) }
         // Open on Chats when nothing needs you, on Needs You when something does.
-        if !isVisible { model.showChats = model.inbox.isEmpty }
+        if !isVisible {
+            model.showChats = model.inbox.isEmpty
+            model.showSearch = false
+        }
         layout(conversationOpen: model.current != nil)
         panel.orderFrontRegardless()
         if focus { panel.makeKey() }
@@ -159,7 +162,8 @@ final class HUDController {
 
         // Escape peels back one layer at a time.
         if e.keyCode == 53 {
-            if model.switcherOpen { model.switcherOpen = false }
+            if ImageViewer.shared.isVisible { ImageViewer.shared.close() }
+            else if model.switcherOpen { model.switcherOpen = false }
             else if model.assistantMode { model.closeAssistant() }
             else if model.editing != nil { model.editing = nil }
             else if model.current != nil { model.closeConversation() }
@@ -173,6 +177,7 @@ final class HUDController {
             return true
         }
         if flags == .command, chars == "w" { hide(); return true }
+        if flags == .command, chars == "f" { model.openSearch(); return true }
         if flags == .command, chars == "[" { model.goBack(); return true }
         if flags == .command, chars == "o" { model.openInSlack(); return true }
         if flags.contains(.option), e.keyCode == 125 || e.keyCode == 126 {
@@ -189,6 +194,15 @@ final class HUDController {
             case 36, 76:
                 if results.indices.contains(model.switcherIndex) { model.openSwitcherTarget(results[model.switcherIndex]) }
                 return true
+            default: return false
+            }
+        }
+
+        if model.showSearch && model.searchFocused {
+            switch e.keyCode {
+            case 125: model.moveSearchSelection(1); return true
+            case 126: model.moveSearchSelection(-1); return true
+            case 36, 76: model.searchEnter(); return true
             default: return false
             }
         }

@@ -94,6 +94,22 @@ final class DemoWorkspace {
 
     private func key(_ r: ConversationRef) -> String { "\(r.channel)|\(r.threadTs ?? "")" }
 
+    /// Plain word search over the fake workspace, newest first (modifiers like from: are ignored).
+    func search(_ q: String) -> [SearchHit] {
+        let words = q.lowercased().split(separator: " ").filter { !$0.contains(":") }
+        guard !words.isEmpty else { return [] }
+        var hits: [SearchHit] = []
+        for (k, msgs) in store {
+            let parts = k.split(separator: "|", omittingEmptySubsequences: false)
+            let channel = String(parts[0]), thread = parts.count > 1 && !parts[1].isEmpty ? String(parts[1]) : nil
+            for m in msgs where words.allSatisfy({ (m.text ?? "").lowercased().contains($0) }) {
+                if thread != nil, m.ts == thread { continue } // the parent is also in the channel's list
+                hits.append(SearchHit(channel: channel, message: m, threadTs: thread))
+            }
+        }
+        return hits.sorted { $0.date > $1.date }
+    }
+
     func messages(_ ref: ConversationRef) -> [SlackMessage] {
         if let m = store[key(ref)] { return m }
         if let t = ref.threadTs,

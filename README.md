@@ -25,6 +25,7 @@ Slack Glass is a small macOS menu-bar app built on Slack's public API. It's free
 - **Toasts that open in place.** Click a toast and the thread or DM opens in a floating panel with its full history. You can also reply straight from the toast.
 - **A "Needs you" inbox.** DMs, group DMs, @mentions, your keywords, and new replies in threads you've posted in, grouped by thread. Opening an item clears it, and so does replying from anywhere, including Slack itself.
 - **Chats.** Browse and search every channel and DM, and use the arrow keys to move through the results. When nothing needs you, this is what you see.
+- **Search.** Search every message you can see in Slack, using Slack's own modifiers (`from:@maya`, `in:#eng`, `has:link`). Open a result and it jumps to that message in its thread or channel.
 - **Reply like Slack.** Enter sends, Shift-Enter adds a new line, and `@name` mentions resolve. "Also send to #channel" works too. You can attach files by pasting, by dragging them (screenshots included), or with the paperclip.
 - **Schedule, snooze and drafts.** Schedule a message for later. Snooze an item until it matters. Whatever you half-typed in a conversation is still there when you come back.
 - **React, edit, delete and copy links.** Hover a message to get quick reactions and the full emoji picker, including your workspace's custom emoji.
@@ -81,9 +82,10 @@ Slack Glass talks to Slack through a small private Slack app that **you** create
 - **The bubble** sits just under your menu-bar clock and shows how many items need you. Click it to open or close the panel, or drag it anywhere; it remembers where you put it. You can turn it off in Settings.
 - **The menu-bar icon** does the same: left-click to open, right-click for Settings and Quit.
 - **Toasts** appear when something needs you. Click one to open the thread, type in its reply box to answer without opening anything, or let it fade after 8 seconds.
-- **The panel** has two tabs:
+- **The panel** has three tabs:
   - **Needs you:** the inbox described above.
   - **Chats:** every channel and DM. Start typing to search, use ↑↓ to pick one, and press Enter to open it.
+  - **Search:** messages across Slack (see [Searching](#searching)).
 - **Opening a conversation** shows it to the left of the inbox. ⌘[ goes back, and Esc closes one layer at a time.
 - Slack Glass **doesn't take focus** from the app you're in until you click into the reply box. Clicking anywhere outside the panel closes it.
 
@@ -94,6 +96,12 @@ Slack Glass talks to Slack through a small private Slack app that **you** create
 - **Schedule a message** with the clock button next to Send: in 1 hour, in 3 hours, tomorrow at 9 AM, Monday at 9 AM, or a custom time.
 - **Drafts** are saved per conversation as you type. A ✎ in the inbox marks conversations with an unsent draft.
 - **Hover a message** to react, edit or delete your own messages, copy a link, or open it in Slack.
+
+### Searching
+
+Press **⌘F** or click **SEARCH**, then type. Results appear as you type, newest first. Use ↑↓ to move and Enter to open one. The message opens in its thread, or in its channel with the conversation around it, highlighted.
+
+Slack's search modifiers all work: `from:@maya`, `in:#eng`, `in:@sam`, `has:link`, `has:file`, `is:thread`, `before:2026-01-01`, `after:2026-06-01`, and `"exact phrase"`. The chips under the search box add the common ones for you, including **In #this-channel** for the conversation you have open.
 
 ### Snoozing
 
@@ -112,12 +120,13 @@ Hover an inbox item and click the moon to snooze it for 20 minutes, 1 hour, 3 ho
 | R | Jump to the reply box |
 | ⌥↓ / ⌥↑ | Open the next or previous item, even while typing |
 | ⌘K | Jump to any channel or person, or start a new DM |
+| ⌘F | Search messages |
 | ⌘[ | Back |
 | ⌘O | Open the current conversation in Slack |
 | ⌘W | Close the panel |
 | Esc | Back out one layer: picker → assistant → edit → conversation → close |
 
-In the image viewer, ⌘C copies the image, ⌘S saves it to Downloads, and Esc closes it.
+In the image viewer, ⌘C copies the image, ⌘S saves it to Downloads, and Esc closes it (and only it).
 
 ## Slash commands
 
@@ -165,7 +174,7 @@ Set it up in Settings → Assistant. Your server needs to implement the small [A
 - **The assistant token** is only sent over HTTPS, or plain HTTP to your own Mac (`localhost`).
 - **Revoke access at any time:** delete the app at [api.slack.com/apps](https://api.slack.com/apps), or click **Remove tokens** in Settings.
 
-The permissions the Slack app asks for are listed in [`slack-manifest.json`](slack-manifest.json). It reads and writes messages, reactions and files as you, and reads users, channels and custom emoji.
+The permissions the Slack app asks for are listed in [`slack-manifest.json`](slack-manifest.json). It reads and writes messages, reactions and files as you, searches messages, and reads users, channels and custom emoji.
 
 ## Troubleshooting
 
@@ -176,6 +185,8 @@ The permissions the Slack app asks for are listed in [`slack-manifest.json`](sla
 **"You're not in #channel."** You can read a channel only after joining it. Press ⌘O to open it in Slack and join there.
 
 **Messages arrive late or not at all.** Check the status in Settings. Slack Glass reconnects on its own after sleep or network changes. If it keeps failing, click **Save & Connect** again. If you use rotating tokens, make sure step 4 is filled in.
+
+**Search says it needs one more permission.** Your Slack app was created before search was added. On [api.slack.com/apps](https://api.slack.com/apps), open your app → **OAuth & Permissions** → **User Token Scopes**, add `search:read`, then click **Reinstall to Workspace**. The User OAuth Token normally stays the same. If the page shows a different one, paste it into Settings.
 
 **I get every notification twice.** Turn off desktop notifications in Slack itself.
 

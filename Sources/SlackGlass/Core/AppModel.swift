@@ -45,6 +45,20 @@ final class AppModel: ObservableObject {
     @Published var pinned = false
     @Published var history: [ConversationRef] = []
     @Published var showChats = false
+    // Message search (the SEARCH tab).
+    @Published var showSearch = false
+    @Published var searchQuery = ""
+    @Published var searchResults: [SearchHit] = []
+    @Published var searchTotal = 0
+    @Published var searchIndex = 0
+    @Published var searchFocused = false
+    @Published var searching = false
+    @Published var searchError: String?
+    @Published var searchFocusTick = 0
+    var searchedQuery = ""
+    var searchTask: Task<Void, Never>?
+    /// The message to scroll to and highlight after opening a search result.
+    @Published var focusTs: String?
     @Published var chatQuery = ""
     @Published private(set) var recents: [String] = []
     @Published var sendTick = 0
@@ -80,13 +94,13 @@ final class AppModel: ObservableObject {
     var onNotify: ((InboxItem) -> Void)?
     var onOpenSettings: (() -> Void)?
 
-    private var api: SlackAPI?
+    private(set) var api: SlackAPI?
     private var socket: SocketModeClient?
     private var watched: [String] = []
     private var watchedSet: Set<String> = []
     private var pendingUsers: Set<String> = []
     private var pendingConversations: Set<String> = []
-    private var demo: DemoWorkspace?
+    private(set) var demo: DemoWorkspace?
 
     init() {
         let s = Persistence.load()
@@ -264,7 +278,7 @@ final class AppModel: ObservableObject {
         return value.flatMap(URL.init(string:))
     }
 
-    private func ensureUser(_ id: String) {
+    func ensureUser(_ id: String) {
         guard let api, users[id] == nil, !pendingUsers.contains(id) else { return }
         pendingUsers.insert(id)
         Task {
@@ -495,9 +509,9 @@ final class AppModel: ObservableObject {
 
     // MARK: - Conversation
 
-    func open(_ ref: ConversationRef, pushHistory: Bool = true) {
-        if current != ref {
-            if pushHistory, let cur = current {
+    func open(_ ref: ConversationRef, pushHistory: Bool = true, focus: String? = nil) {
+        if current != ref || focus != nil {
+            if pushHistory, let cur = current, cur != ref {
                 history.removeAll { $0 == ref }
                 history.append(cur)
                 if history.count > 30 { history.removeFirst() }
@@ -505,6 +519,7 @@ final class AppModel: ObservableObject {
             messages = []
             editing = nil
             assistantMode = false
+            focusTs = focus
         }
         current = ref
         recents.removeAll { $0 == ref.channel }
@@ -628,9 +643,22 @@ final class AppModel: ObservableObject {
                 let r = try await api.call("conversations.replies", ["channel": ref.channel, "ts": t, "limit": 300])
                 msgs = SlackAPI.decodeList(SlackMessage.self, r["messages"])
             } else {
-                let r = try await api.call("conversations.history", ["channel": ref.channel, "limit": 60])
-                msgs = SlackAPI.decodeList(SlackMessage.self, r["messages"]).reversed()
-                if let last = msgs.last {
+                if let f = focusTs {
+                    // Opened from search: the messages around that one, not the latest.
+                    let older = try await api.call("conversations.history",
+                                                   ["channel": ref.channel, "latest": f, "inclusive": true, "limit": 30])
+                    let newer = try? await api.call("conversations.history",
+                                                    ["channel": ref.channel, "oldest": f, "limit": 30])
+                    let all = SlackAPI.decodeList(SlackMessage.self, older["messages"])
+                        + SlackAPI.decodeList(SlackMessage.self, newer?["messages"])
+                    var seen = Set<String>()
+                    msgs = all.filter { seen.insert($0.ts).inserted }
+                        .sorted { (Double($0.ts) ?? 0) < (Double($1.ts) ?? 0) }
+                } else {
+                    let r = try await api.call("conversations.history", ["channel": ref.channel, "limit": 60])
+                    msgs = SlackAPI.decodeList(SlackMessage.self, r["messages"]).reversed()
+                }
+                if focusTs == nil, let last = msgs.last {
                     // Keeps the real Slack client's unread state in sync.
                     _ = try? await api.call("conversations.mark", ["channel": ref.channel, "ts": last.ts])
                 }

@@ -71,9 +71,18 @@ struct ConversationView: View {
                 messageStack
             }
             .onChange(of: model.messages.count) { _ in
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                withAnimation(.easeOut(duration: 0.2)) { scroll(proxy) }
             }
-            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+            .onAppear { scroll(proxy) }
+        }
+    }
+
+    /// To the message opened from search (once it's loaded), otherwise to the newest.
+    private func scroll(_ proxy: ScrollViewProxy) {
+        if let f = model.focusTs, model.messages.contains(where: { $0.ts == f }) {
+            proxy.scrollTo(f, anchor: .center)
+        } else {
+            proxy.scrollTo("bottom", anchor: .bottom)
         }
     }
 
@@ -84,6 +93,8 @@ struct ConversationView: View {
                                    compact: i > 0 && model.messages[i - 1].user == m.user && m.user != nil
                                        && m.date.timeIntervalSince(model.messages[i - 1].date) < 300
                                        && !(isThread && i == 1))
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.yellow.opacity(m.ts == model.focusTs ? 0.14 : 0)))
                             .id(m.id)
                         if isThread && i == 0 && model.messages.count > 1 {
                             HStack(spacing: 8) {

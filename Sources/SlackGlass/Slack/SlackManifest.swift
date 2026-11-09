@@ -13,7 +13,7 @@ enum SlackManifest {
         "chat:write",
         "reactions:read", "reactions:write",
         "files:read", "files:write",
-        "emoji:read",
+        "emoji:read", "search:read",
     ]
 
     static let userEvents = [
