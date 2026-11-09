@@ -23,7 +23,7 @@ final class AppModel: ObservableObject {
     @Published var meID = ""
     @Published var teamID = ""
     @Published var users: [String: SlackUser] = [:] {
-        didSet { renderCache.removeAll(); plainCache.removeAll(); chatCache = nil }
+        didSet { renderCache.removeAll(); plainCache.removeAll(); chatCache = nil; handleIndex = nil }
     }
     @Published var conversations: [String: SlackConversation] = [:] { didSet { chatCache = nil } }
     @Published var customEmoji: [String: String] = [:]
@@ -86,6 +86,12 @@ final class AppModel: ObservableObject {
     private var renderCache: [String: AttributedString] = [:]
     private var plainCache: [String: String] = [:]
     private var chatCache: (key: String, sections: [ChatSection], index: [String: Int])?
+    /// When each conversation last had a message (or was opened here). Drives Recent and the DM order.
+    private(set) var lastActivity: [String: Double] = [:]
+    @Published private(set) var activityVersion = 0
+    private var activitySaveScheduled = false
+    private var handleIndex: [String: String]?
+    private var backfillTask: Task<Void, Never>?
     private var draftSaveWork: DispatchWorkItem?
     @Published var lastError: String?
     @Published private(set) var isDemo = false
@@ -108,6 +114,7 @@ final class AppModel: ObservableObject {
         watched = s.watched
         watchedSet = Set(s.watched)
         recents = s.recents ?? []
+        lastActivity = s.lastActivity ?? [:]
         snoozed = s.snoozed ?? []
         drafts = s.drafts ?? [:]
         draftKeys = Set(drafts.keys)
@@ -179,6 +186,7 @@ final class AppModel: ObservableObject {
                     }
                 }
                 refreshPresence()
+                backfillActivity()
 
                 let socket = SocketModeClient(appToken: appToken, api: api)
                 if TokenRotation.isRotating(appToken) || TokenRotation.canRefresh(TokenKey.appRefresh) {
@@ -246,7 +254,16 @@ final class AppModel: ObservableObject {
         var n = name
         if n.hasPrefix("mpdm-") { n.removeFirst(5) }
         if let r = n.range(of: #"-\d+$"#, options: .regularExpression) { n.removeSubrange(r) }
-        return n.components(separatedBy: "--").filter { $0 != users[meID]?.name }.joined(separator: ", ")
+        if handleIndex == nil {
+            var idx: [String: String] = [:]
+            for u in users.values { if let h = u.name { idx[h] = u.id } }
+            handleIndex = idx
+        }
+        // "mpdm-gianni--kevin.b--me-1" → "Gianni Rossi, Kevin Brown", using display names where known.
+        return n.components(separatedBy: "--")
+            .filter { $0 != users[meID]?.name }
+            .map { h in handleIndex?[h].map { userName($0) } ?? h }
+            .joined(separator: ", ")
     }
 
     var mrkdwnContext: Mrkdwn.Context {
@@ -340,6 +357,7 @@ final class AppModel: ObservableObject {
         }
 
         guard let msg = SlackAPI.decode(SlackMessage.self, e) else { return }
+        noteActivity(ch, ts: Double(msg.ts) ?? Date().timeIntervalSince1970)
         let channelType = e["channel_type"] as? String ?? (ch.hasPrefix("D") ? "im" : "channel")
         ensureConversation(ch)
         if let u = msg.user { ensureUser(u) }
@@ -504,7 +522,8 @@ final class AppModel: ObservableObject {
     private func persist() {
         guard !isDemo else { return }
         Persistence.save(PersistedState(inbox: inbox, watched: watched, recents: recents,
-                                        snoozed: snoozed, drafts: drafts, assistantChats: assistantChats))
+                                        snoozed: snoozed, drafts: drafts, assistantChats: assistantChats,
+                                        lastActivity: lastActivity))
     }
 
     // MARK: - Conversation
@@ -522,6 +541,7 @@ final class AppModel: ObservableObject {
             focusTs = focus
         }
         current = ref
+        noteActivity(ref.channel, ts: Date().timeIntervalSince1970)
         recents.removeAll { $0 == ref.channel }
         recents.insert(ref.channel, at: 0)
         if recents.count > 20 { recents.removeLast() }
@@ -572,7 +592,7 @@ final class AppModel: ObservableObject {
     func chatPosition(_ id: String) -> Int { chatData().index[id] ?? -1 }
 
     private func chatData() -> (sections: [ChatSection], index: [String: Int]) {
-        let key = "\(chatQuery)|\(recents.joined(separator: ","))|\(publicChannels.count)"
+        let key = "\(chatQuery)|\(recents.joined(separator: ","))|\(publicChannels.count)|\(activityVersion)"
         if let c = chatCache, c.key == key { return (c.sections, c.index) }
         let sections = buildChatSections()
         var index: [String: Int] = [:]
@@ -593,7 +613,15 @@ final class AppModel: ObservableObject {
             if !others.isEmpty { out.append(ChatSection(id: "browse", title: "Other channels", items: Array(others))) }
             return out.filter { !$0.items.isEmpty }
         }
-        let recent = recents.compactMap { conversations[$0] }.filter { $0.is_archived != true }.prefix(8)
+        let activity = { (c: SlackConversation) in self.lastActivity[c.id] ?? c.estimatedActivity ?? 0 }
+        // Recent: DMs and group DMs with the newest messages, plus channels you've opened here lately
+        // (busy channels would otherwise crowd out the people you actually talk to).
+        let openedChannels = Set(recents.prefix(8))
+        let recentScore = { (c: SlackConversation) in c.isDirect || openedChannels.contains(c.id) ? activity(c) : 0 }
+        let recent = conversations.values
+            .filter { $0.is_archived != true && recentScore($0) > 0 && !(($0.is_im == true) && users[$0.user ?? ""]?.deleted == true) }
+            .sorted { recentScore($0) > recentScore($1) }
+            .prefix(10)
         let recentIDs = Set(recent.map(\.id))
         let live = conversations.values.filter { c in
             c.is_archived != true && !recentIDs.contains(c.id) && !(c.is_im == true && users[c.user ?? ""]?.deleted == true)
@@ -601,7 +629,11 @@ final class AppModel: ObservableObject {
         // One title lookup per conversation, then sort on the strings.
         let titled = live.map { (conv: $0, target: chatTarget($0)) }
         let chans = titled.filter { !$0.conv.isDirect }.sorted { $0.target.title.localizedCaseInsensitiveCompare($1.target.title) == .orderedAscending }
-        let dms = titled.filter { $0.conv.isDirect }.sorted { $0.target.title.localizedCaseInsensitiveCompare($1.target.title) == .orderedAscending }
+        // Like Slack: most recently active first, then alphabetical.
+        let dms = titled.filter { $0.conv.isDirect }.sorted {
+            let a = activity($0.conv), b = activity($1.conv)
+            return a != b ? a > b : $0.target.title.localizedCaseInsensitiveCompare($1.target.title) == .orderedAscending
+        }
         return [
             ChatSection(id: "recent", title: "Recent", items: recent.map { chatTarget($0) }),
             ChatSection(id: "channels", title: "Channels", items: chans.map(\.target)),
@@ -1024,6 +1056,43 @@ extension AppModel {
     // Presence (Slack's Events API has no presence or typing events, so we poll the people on screen)
 
     func isOnline(_ id: String?) -> Bool? { id.flatMap { presence[$0] } }
+
+    func noteActivity(_ channel: String, ts: Double) {
+        guard ts > (lastActivity[channel] ?? -1) else { return }
+        lastActivity[channel] = ts
+        activityVersion += 1
+        guard !activitySaveScheduled else { return }
+        activitySaveScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            self?.activitySaveScheduled = false
+            self?.persist()
+        }
+    }
+
+    /// Slack's API doesn't say when a conversation last had a message, so after connecting this asks each one
+    /// for its newest message, slowly in the background, likeliest-recent first. Live events
+    /// keep it current after that.
+    func backfillActivity() {
+        guard demo == nil, let api else { return }
+        backfillTask?.cancel()
+        // Likeliest-recent first, so Recent is right within seconds; the long tail of old chats is skipped.
+        let guess = { (c: SlackConversation) in max(self.lastActivity[c.id] ?? 0, c.estimatedActivity ?? 0) }
+        let ordered = conversations.values
+            .filter { $0.is_archived != true && !($0.is_im == true && users[$0.user ?? ""]?.deleted == true) }
+            .sorted { guess($0) > guess($1) }
+            .prefix(150)
+            .map(\.id)
+        backfillTask = Task { [weak self] in
+            for id in ordered {
+                guard !Task.isCancelled else { return }
+                if let r = try? await api.call("conversations.history", ["channel": id, "limit": 1]) {
+                    let ts = ((r["messages"] as? [[String: Any]])?.first?["ts"] as? String).flatMap(Double.init)
+                    self?.noteActivity(id, ts: ts ?? 0)
+                }
+                try? await Task.sleep(nanoseconds: 1_200_000_000) // stays under Slack's ~50 calls a minute
+            }
+        }
+    }
 
     func refreshPresence() {
         guard api != nil, demo == nil else { return }

@@ -146,6 +146,8 @@ struct PersistedState: Codable {
     var drafts: [String: String]? = [:]
     /// Slack conversation → the Assistant conversation started from it, so follow-ups keep their context.
     var assistantChats: [String: String]? = [:]
+    /// Conversation → timestamp of its latest message, so Chats can sort by recent activity like Slack.
+    var lastActivity: [String: Double]? = [:]
 }
 
 /// Slash commands are just files: `~/Library/Application Support/Slack Glass/Commands/silence.mp4`

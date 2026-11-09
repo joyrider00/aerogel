@@ -39,8 +39,13 @@ struct SlackConversation: Codable, Hashable, Identifiable {
     var is_private: Bool?
     var is_archived: Bool?
     var user: String?
+    /// Milliseconds. Undocumented, but in practice it lands 30 days after the last message.
+    var updated: Double?
 
     var isDirect: Bool { is_im == true || is_mpim == true }
+
+    /// A first guess at when the last message was, until the real one is fetched.
+    var estimatedActivity: Double? { updated.map { $0 / 1000 - 30 * 86_400 } }
 }
 
 struct SlackFile: Codable, Hashable, Identifiable {
