@@ -1,0 +1,33 @@
+{
+  "display_information": {
+    "name": "Aerogel",
+    "description": "A glass HUD for reading and replying to Slack without opening Slack.",
+    "background_color": "#1a1033"
+  },
+  "oauth_config": {
+    "scopes": {
+      "user": [
+        "channels:history", "channels:read", "channels:write",
+        "groups:history", "groups:read", "groups:write",
+        "im:history", "im:read", "im:write",
+        "mpim:history", "mpim:read", "mpim:write",
+        "users:read",
+        "chat:write",
+        "reactions:read", "reactions:write",
+        "files:read", "files:write",
+        "emoji:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "user_events": [
+        "message.channels", "message.groups", "message.im", "message.mpim",
+        "reaction_added", "reaction_removed"
+      ]
+    },
+    "socket_mode_enabled": true,
+    "org_deploy_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

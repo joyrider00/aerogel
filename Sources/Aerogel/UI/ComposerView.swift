@@ -1,0 +1,368 @@
+import AppKit
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct ComposerView: View {
+    @EnvironmentObject var model: AppModel
+    @State private var text = ""
+    @State private var height: CGFloat = 18
+    @State private var files: [URL] = []
+    @State private var broadcast = false
+    @State private var sending = false
+    @State private var draftRef: ConversationRef?
+    @State private var customSchedule = false
+    @State private var customDate = Date().addingTimeInterval(3600)
+
+    private var isThread: Bool { model.current?.threadTs != nil }
+
+    private var placeholder: String {
+        if model.editing != nil { return "Edit message" }
+        if model.assistantMode { return "Ask \(Prefs.assistantName), or tell it what to do…" }
+        guard let cur = model.current else { return "" }
+        return isThread ? "Reply…" : "Message \(model.title(cur.channel))"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if model.editing != nil {
+                HStack {
+                    Image(systemName: "pencil").font(.system(size: 10))
+                    Text("Editing · Enter to save · Esc to cancel").font(.system(size: 10.5))
+                    Spacer()
+                }
+                .foregroundStyle(.secondary)
+            }
+            if !files.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(files, id: \.self) { url in
+                            HStack(spacing: 5) {
+                                Image(systemName: "paperclip").font(.system(size: 10))
+                                Text(url.lastPathComponent).font(.system(size: 11)).lineLimit(1)
+                                Button { files.removeAll { $0 == url } } label: {
+                                    Image(systemName: "xmark.circle.fill").font(.system(size: 10))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .glassChip(radius: 8, opacity: 0.12)
+                        }
+                    }
+                }
+            }
+            let commands = model.editing == nil ? SlashCommands.matching(text) : []
+            if !commands.isEmpty {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(commands.prefix(6)) { c in
+                        HStack(spacing: 8) {
+                            Image(systemName: c.isBuiltin ? "sparkles" : c.isText ? "text.quote"
+                                  : c.isVideo ? "play.rectangle.fill" : "photo.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(c.isBuiltin ? AssistantPanel.tint : .secondary).frame(width: 16)
+                            Text("/" + c.name).font(.system(size: 12.5, weight: .medium))
+                            Spacer()
+                            Text(c.isBuiltin ? "Ask \(Prefs.assistantName) about this conversation" : c.url.lastPathComponent)
+                                .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .background(RoundedRectangle(cornerRadius: 8)
+                            .fill(.white.opacity(c.id == commands.first?.id ? 0.12 : 0)))
+                        .contentShape(Rectangle())
+                        .onTapGesture { complete(c) }
+                    }
+                    Text("Enter sends · Tab completes · add more in Settings → Commands folder")
+                        .font(.system(size: 9.5)).foregroundStyle(.secondary).padding(.horizontal, 8).padding(.top, 2)
+                }
+            }
+            HStack(alignment: .bottom, spacing: 6) {
+                IconButton(symbol: "paperclip", help: "Attach files (or paste / drop)") { pickFiles() }
+                    .disabled(model.editing != nil)
+                ZStack(alignment: .topLeading) {
+                    if text.isEmpty {
+                        Text(placeholder).font(.system(size: 13)).foregroundStyle(.secondary)
+                            .allowsHitTesting(false)
+                    }
+                    ComposerTextView(text: $text, height: $height, focusTick: model.focusComposerTick,
+                                     onSubmit: submit, onFiles: { files += $0 },
+                                     onTab: {
+                                         guard let first = SlashCommands.matching(text).first else { return false }
+                                         complete(first)
+                                         return true
+                                     })
+                        .frame(height: height)
+                }
+                .padding(.vertical, 3)
+                if model.editing == nil {
+                    Menu {
+                        ForEach(AppModel.snoozeOptions().dropFirst(), id: \.label) { o in
+                            Button("Send \(o.label == "1 hour" ? "in 1 hour" : o.label == "3 hours" ? "in 3 hours" : o.label)") {
+                                scheduleSend(at: o.date)
+                            }
+                        }
+                        Divider()
+                        Button("Custom time…") { customSchedule = true }
+                    } label: {
+                        Image(systemName: "clock").font(.system(size: 12, weight: .medium)).frame(width: 24, height: 24)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty)
+                    .help("Schedule send")
+                    .popover(isPresented: $customSchedule, arrowEdge: .top) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Schedule message").font(.headline)
+                            DatePicker("", selection: $customDate, in: Date()...,
+                                       displayedComponents: [.date, .hourAndMinute])
+                                .datePickerStyle(.graphical)
+                                .labelsHidden()
+                            HStack {
+                                Spacer()
+                                Button("Cancel") { customSchedule = false }
+                                Button("Schedule") {
+                                    customSchedule = false
+                                    scheduleSend(at: customDate)
+                                }
+                                .keyboardShortcut(.defaultAction)
+                            }
+                        }
+                        .padding(14)
+                    }
+                }
+                Button(action: submit) {
+                    Image(systemName: sending ? "ellipsis" : "arrow.up")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(canSend ? Color.accentColor : .white.opacity(0.15)))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSend)
+                .help("Send (Enter) · newline (Shift-Enter)")
+            }
+            if isThread, model.editing == nil, let cur = model.current, !model.isDirect(cur.channel) {
+                Toggle("Also send to \(model.title(cur.channel))", isOn: $broadcast)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(model.assistantMode ? AssistantPanel.tint.opacity(0.14) : .white.opacity(model.dropHover ? 0.2 : 0.1)))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .strokeBorder(model.assistantMode ? AssistantPanel.tint.opacity(0.7) : .white.opacity(0.22)))
+        .padding(10)
+        .onChange(of: model.composerInsert) { s in
+            guard let s else { return }
+            model.closeAssistant()
+            text = s
+            model.composerInsert = nil
+        }
+        .onChange(of: model.droppedFiles) { urls in
+            guard let urls else { return }
+            files.append(contentsOf: urls)
+            model.droppedFiles = nil
+        }
+        .onChange(of: model.editing) { m in
+            text = m.map { Mrkdwn.decode($0.text ?? "") } ?? model.current.map { model.draft(for: $0) } ?? ""
+        }
+        .onChange(of: model.current) { new in
+            // Drafts: stash what was typed for the old conversation, restore the new one's.
+            if let old = draftRef, model.editing == nil { model.setDraft(text, for: old) }
+            files = []
+            broadcast = false
+            text = new.map { model.draft(for: $0) } ?? ""
+            draftRef = new
+        }
+        .onChange(of: text) { t in
+            if model.editing == nil, let ref = model.current { model.setDraft(t, for: ref) }
+        }
+        .onAppear {
+            draftRef = model.current
+            if let ref = model.current, text.isEmpty { text = model.draft(for: ref) }
+        }
+    }
+
+    private var canSend: Bool {
+        !sending && (!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty)
+    }
+
+    private func submit() {
+        guard canSend else { return }
+        let body = text, attachments = files, bc = broadcast
+        sending = true
+        Task {
+            let ok: Bool
+            if let m = model.editing {
+                ok = await model.saveEdit(m, text: body)
+            } else if model.assistantMode, attachments.isEmpty, let ref = model.current,
+                      SlashCommands.parse(body).map({ SlashCommands.isAssistant($0.name) }) != false {
+                // In Assistant mode the box talks to Assistant ("/assistant …" works too); other /commands still go to Slack.
+                let q = SlashCommands.parse(body).map(\.rest) ?? body
+                model.askAssistant(q, about: ref)
+                ok = true
+            } else if attachments.isEmpty, let result = await model.runSlashCommand(body, broadcast: bc) {
+                ok = result
+            } else {
+                ok = await model.send(text: body, files: attachments, broadcast: bc)
+            }
+            sending = false
+            if ok {
+                text = ""
+                files = []
+                broadcast = false
+            }
+        }
+    }
+
+    private func scheduleSend(at date: Date) {
+        let body = text, bc = broadcast
+        Task {
+            if await model.schedule(text: body, at: date, broadcast: bc) {
+                text = ""
+                broadcast = false
+            }
+        }
+    }
+
+    private func complete(_ c: SlashCommands.Command) {
+        text = "/" + c.name + " "
+        model.focusComposerTick += 1
+    }
+
+    private func pickFiles() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        NSApp.activate(ignoringOtherApps: true)
+        if panel.runModal() == .OK { files += panel.urls }
+    }
+}
+
+/// NSTextView wrapper: Enter sends, Shift-Enter adds a newline, paste/drop of files and images attaches them.
+struct ComposerTextView: NSViewRepresentable {
+    @Binding var text: String
+    @Binding var height: CGFloat
+    var focusTick: Int
+    var onSubmit: () -> Void
+    var onFiles: ([URL]) -> Void
+    var onTab: () -> Bool = { false }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let tv = SubmitTextView()
+        tv.delegate = context.coordinator
+        tv.isRichText = false
+        tv.importsGraphics = false
+        tv.allowsUndo = true
+        tv.font = .systemFont(ofSize: 13)
+        tv.textColor = .labelColor
+        tv.insertionPointColor = .white
+        tv.drawsBackground = false
+        tv.isAutomaticQuoteSubstitutionEnabled = false
+        tv.isAutomaticDashSubstitutionEnabled = false
+        tv.isAutomaticTextReplacementEnabled = true
+        tv.isContinuousSpellCheckingEnabled = true
+        tv.textContainerInset = .zero
+        tv.textContainer?.lineFragmentPadding = 0
+        tv.textContainer?.widthTracksTextView = true
+        tv.isVerticallyResizable = true
+        tv.isHorizontallyResizable = false
+        tv.autoresizingMask = [.width]
+        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        tv.onSubmit = { [weak coordinator = context.coordinator] in coordinator?.parent.onSubmit() }
+        tv.onFiles = { [weak coordinator = context.coordinator] in coordinator?.parent.onFiles($0) }
+        tv.onTab = { [weak coordinator = context.coordinator] in coordinator?.parent.onTab() ?? false }
+        tv.registerForDraggedTypes(DropReader.types)
+
+        let sv = NSScrollView()
+        sv.documentView = tv
+        sv.drawsBackground = false
+        sv.hasVerticalScroller = false
+        sv.borderType = .noBorder
+        return sv
+    }
+
+    func updateNSView(_ sv: NSScrollView, context: Context) {
+        context.coordinator.parent = self
+        guard let tv = sv.documentView as? SubmitTextView else { return }
+        if tv.string != text {
+            tv.string = text
+            context.coordinator.recalc(tv)
+        }
+        if context.coordinator.lastFocus != focusTick {
+            context.coordinator.lastFocus = focusTick
+            DispatchQueue.main.async {
+                tv.window?.makeFirstResponder(tv)
+                tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
+            }
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: ComposerTextView
+        var lastFocus = -1
+
+        init(_ p: ComposerTextView) { parent = p }
+
+        func textDidChange(_ n: Notification) {
+            guard let tv = n.object as? NSTextView else { return }
+            parent.text = tv.string
+            recalc(tv)
+        }
+
+        func recalc(_ tv: NSTextView) {
+            guard let lm = tv.layoutManager, let tc = tv.textContainer else { return }
+            lm.ensureLayout(for: tc)
+            let h = max(18, min(140, ceil(lm.usedRect(for: tc).height)))
+            if abs(parent.height - h) > 0.5 {
+                DispatchQueue.main.async { self.parent.height = h }
+            }
+        }
+    }
+}
+
+final class SubmitTextView: NSTextView {
+    var onSubmit: (() -> Void)?
+    var onFiles: (([URL]) -> Void)?
+    var onTab: (() -> Bool)?
+
+    override func keyDown(with e: NSEvent) {
+        if e.keyCode == 48, onTab?() == true { return }
+        let isReturn = e.keyCode == 36 || e.keyCode == 76
+        let flags = e.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if isReturn, !flags.contains(.shift), !flags.contains(.option), !hasMarkedText() {
+            onSubmit?()
+            return
+        }
+        super.keyDown(with: e)
+    }
+
+    override func paste(_ sender: Any?) {
+        let pb = NSPasteboard.general
+        let hasFiles = pb.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
+        let hasImage = pb.string(forType: .string) == nil && pb.availableType(from: [.png, .tiff]) != nil
+        if hasFiles || hasImage {
+            DropReader.read(pb) { [weak self] urls in if !urls.isEmpty { self?.onFiles?(urls) } }
+            return
+        }
+        pasteAsPlainText(sender)
+    }
+
+    // Files, screenshots and images dropped on the text become attachments, not pasted paths.
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        DropReader.canRead(sender.draggingPasteboard) ? .copy : super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        DropReader.canRead(sender.draggingPasteboard) ? .copy : super.draggingUpdated(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let pb = sender.draggingPasteboard
+        guard DropReader.canRead(pb) else { return super.performDragOperation(sender) }
+        DropReader.read(pb) { [weak self] urls in if !urls.isEmpty { self?.onFiles?(urls) } }
+        return true
+    }
+}
