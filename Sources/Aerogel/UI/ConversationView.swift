@@ -354,7 +354,7 @@ struct FileView: View {
             }
         }
         .onTapGesture { model.openFile(file) }
-        .help("Open in Slack")
+        .help(file.isImage && !file.isVideo ? "View image" : "Open in Slack")
     }
 }
 

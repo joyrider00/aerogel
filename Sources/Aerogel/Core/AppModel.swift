@@ -777,8 +777,13 @@ final class AppModel: ObservableObject {
         if let u = URL(string: s) { NSWorkspace.shared.open(u) }
     }
 
+    /// Images open in Aerogel's viewer; videos and other files open in Slack.
     func openFile(_ f: SlackFile) {
-        if let p = f.permalink.flatMap(URL.init(string:)) { NSWorkspace.shared.open(p) }
+        if f.isImage, !f.isVideo {
+            ImageViewer.shared.show(f)
+        } else if let p = f.permalink.flatMap(URL.init(string:)) {
+            NSWorkspace.shared.open(p)
+        }
     }
 
     /// Turns "@maya" into "<@U123>" for known users so mentions actually ping.

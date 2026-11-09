@@ -11,6 +11,15 @@ final class ImageCache {
     private let cache = NSCache<NSURL, NSImage>()
     private var inflight: [URL: Task<Data?, Never>] = [:]
 
+    /// The file's raw bytes (for saving or copying), with the same auth rule as images.
+    func data(for url: URL) async -> Data? {
+        var req = URLRequest(url: url)
+        if let token, let host = url.host, host == "slack.com" || host.hasSuffix(".slack.com") {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        return try? await URLSession.shared.data(for: req).0
+    }
+
     func image(for url: URL) async -> NSImage? {
         if let img = cache.object(forKey: url as NSURL) { return img }
         if let t = inflight[url] { return await t.value.flatMap(NSImage.init(data:)) }

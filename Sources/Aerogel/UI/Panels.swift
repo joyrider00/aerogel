@@ -82,12 +82,38 @@ final class HUDController {
             guard let self, self.panel.isKeyWindow else { return e }
             return self.handleKey(e) ? nil : e
         }
-        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.isVisible, !self.model.pinned else { return }
-                self.hide()
-            }
+        // Clicking another app closes the HUD, but only on a real click: pressing on something to drag it
+        // (a screenshot thumbnail, a file in Finder) must leave the HUD open so it can be dropped here.
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .rightMouseDown]
+        ) { [weak self] e in
+            let type = e.type, at = NSEvent.mouseLocation
+            Task { @MainActor in self?.outsideMouse(type, at: at) }
         }
+    }
+
+    private var outsideDown: NSPoint?
+    private var outsideDragged = false
+
+    private func outsideMouse(_ type: NSEvent.EventType, at p: NSPoint) {
+        switch type {
+        case .leftMouseDown:
+            outsideDown = p
+            outsideDragged = false
+        case .leftMouseDragged:
+            if let d = outsideDown, hypot(p.x - d.x, p.y - d.y) > 4 { outsideDragged = true }
+        case .leftMouseUp:
+            defer { outsideDown = nil }
+            guard outsideDown != nil, !outsideDragged else { return }
+            hideIfUnpinned()
+        default:
+            hideIfUnpinned()
+        }
+    }
+
+    private func hideIfUnpinned() {
+        guard isVisible, !model.pinned, !ImageViewer.shared.isVisible, !ImageViewer.shared.justClosed else { return }
+        hide()
     }
 
     func toggle() { isVisible ? hide() : show() }
