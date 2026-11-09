@@ -22,63 +22,62 @@ struct SettingsView: View {
     @State private var assistantToken = Secrets.get(TokenKey.assistant) ?? ""
     @State private var assistantStatus: String?
     @State private var assistantOK = false
-    @State private var hasSetup = !(Secrets.get(TokenKey.user) ?? "").isEmpty && !(Secrets.get(TokenKey.app) ?? "").isEmpty
-    @State private var linkCode = ""
-    @State private var linkError: String?
-    @State private var copiedLink = false
+    @State private var serverField = Prefs.relayURL ?? ""
+    @State private var showOwnApp = !(Secrets.get(TokenKey.app) ?? "").isEmpty
 
     var body: some View {
         Form {
             Section {
-                Text("Slack Glass talks to Slack through a private app that only you install, in your own workspace. Setup takes about a minute.")
-                    .font(.callout).foregroundStyle(.secondary)
-                if !hasSetup { linkThisMac }
-                step(1, "Create the app from Slack Glass's manifest") {
-                    Button("Create Slack app ↗") { NSWorkspace.shared.open(SlackManifest.createAppURL) }
-                }
-                step(2, "In the app: **Install to Workspace**, then copy the **User OAuth Token** from *OAuth & Permissions*") {
-                    SecureField("xoxp-…", text: $userToken).textFieldStyle(.roundedBorder)
-                }
-                step(3, "In *Basic Information → App-Level Tokens*, generate a token with the **connections:write** scope") {
-                    SecureField("xapp-… or xoxe.xapp-…", text: $appToken).textFieldStyle(.roundedBorder)
-                }
-                if rotating {
-                    step(4, "These tokens **rotate**. So Slack Glass can renew them before they expire, paste the **Refresh token** from the same dialog, plus the **Client ID** and **Client Secret** from *Basic Information → App Credentials*") {
-                        VStack(spacing: 6) {
-                            if TokenRotation.isRotating(cleanApp) {
-                                SecureField("App-level refresh token (xoxe-1-…)", text: $appRefresh).textFieldStyle(.roundedBorder)
+                signIn
+                DisclosureGroup("Use your own Slack app instead (advanced)", isExpanded: $showOwnApp) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Without a team server, Slack Glass connects through a private Slack app you create yourself. Use a separate app on each Mac, or messages are split between them.")
+                            .font(.callout).foregroundStyle(.secondary)
+                        step(1, "Create the app from Slack Glass's manifest") {
+                            Button("Create Slack app ↗") { NSWorkspace.shared.open(SlackManifest.createAppURL) }
+                        }
+                        step(2, "In the app: **Install to Workspace**, then copy the **User OAuth Token** from *OAuth & Permissions*") {
+                            SecureField("xoxp-…", text: $userToken).textFieldStyle(.roundedBorder)
+                        }
+                        step(3, "In *Basic Information → App-Level Tokens*, generate a token with the **connections:write** scope") {
+                            SecureField("xapp-… or xoxe.xapp-…", text: $appToken).textFieldStyle(.roundedBorder)
+                        }
+                        if rotating {
+                            step(4, "These tokens **rotate**. So Slack Glass can renew them before they expire, paste the **Refresh token** from the same dialog, plus the **Client ID** and **Client Secret** from *Basic Information → App Credentials*") {
+                                VStack(spacing: 6) {
+                                    if TokenRotation.isRotating(cleanApp) {
+                                        SecureField("App-level refresh token (xoxe-1-…)", text: $appRefresh).textFieldStyle(.roundedBorder)
+                                    }
+                                    if TokenRotation.isRotating(cleanUser) {
+                                        SecureField("User refresh token (xoxe-1-…)", text: $userRefresh).textFieldStyle(.roundedBorder)
+                                    }
+                                    TextField("Client ID", text: $clientID).textFieldStyle(.roundedBorder)
+                                    SecureField("Client Secret", text: $clientSecret).textFieldStyle(.roundedBorder)
+                                }
                             }
-                            if TokenRotation.isRotating(cleanUser) {
-                                SecureField("User refresh token (xoxe-1-…)", text: $userRefresh).textFieldStyle(.roundedBorder)
+                        }
+                        if let hint = tokenHint {
+                            Label(hint, systemImage: "exclamationmark.circle")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                        HStack {
+                            Button("Save & Connect") {
+                                Secrets.set(TokenKey.user, cleanUser)
+                                Secrets.set(TokenKey.app, cleanApp)
+                                Secrets.set(TokenKey.userRefresh, trim(userRefresh))
+                                Secrets.set(TokenKey.appRefresh, trim(appRefresh))
+                                Secrets.set(TokenKey.clientID, trim(clientID))
+                                Secrets.set(TokenKey.clientSecret, trim(clientSecret))
+                                Secrets.set(TokenKey.relaySession, nil)
+                                model.connect()
                             }
-                            TextField("Client ID", text: $clientID).textFieldStyle(.roundedBorder)
-                            SecureField("Client Secret", text: $clientSecret).textFieldStyle(.roundedBorder)
+                            .disabled(tokenHint != nil)
+                            if !Relay.isSignedIn { statusLabel }
                         }
                     }
+                    .padding(.top, 6)
                 }
-                if let hint = tokenHint {
-                    Label(hint, systemImage: "exclamationmark.circle")
-                        .font(.caption).foregroundStyle(.orange)
-                }
-                HStack {
-                    Button("Save & Connect") {
-                        Secrets.set(TokenKey.user, cleanUser)
-                        Secrets.set(TokenKey.app, cleanApp)
-                        Secrets.set(TokenKey.userRefresh, trim(userRefresh))
-                        Secrets.set(TokenKey.appRefresh, trim(appRefresh))
-                        Secrets.set(TokenKey.clientID, trim(clientID))
-                        Secrets.set(TokenKey.clientSecret, trim(clientSecret))
-                        hasSetup = !cleanUser.isEmpty && !cleanApp.isEmpty
-                        model.connect()
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(tokenHint != nil)
-                    statusLabel
-                    Spacer()
-                    Button("Try demo") { model.startDemo() }
-                }
-                if hasSetup { setUpAnotherMac }
-            } header: { Text("Connect Slack") }
+            } header: { Text("Slack") }
 
             Section {
                 Picker("Notify with", selection: $style) {
@@ -154,7 +153,6 @@ struct SettingsView: View {
                                   TokenKey.clientID, TokenKey.clientSecret] { Secrets.set(k, nil) }
                         userToken = ""
                         appToken = ""
-                        hasSetup = false
                         model.disconnect()
                     }
                     Spacer()
@@ -166,65 +164,54 @@ struct SettingsView: View {
         .frame(width: 580, height: 720)
     }
 
-    /// Shown before setup: reuse the Slack app from another Mac instead of creating a new one.
-    private var linkThisMac: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("**Already using Slack Glass on another Mac?** On that Mac, open Settings and click **Copy link code**, then paste it here. Otherwise, follow the steps below.")
-                .font(.callout)
+    /// The normal way in: the team server's "Sign in with Slack". Every Mac you sign in on gets every message.
+    @ViewBuilder private var signIn: some View {
+        if Relay.isSignedIn {
             HStack {
-                SecureField("sglink1.…", text: $linkCode).textFieldStyle(.roundedBorder)
-                    .onSubmit(linkMac)
-                Button("Link this Mac", action: linkMac).disabled(!LinkCode.looksLike(linkCode))
-            }
-            if let linkError {
-                Label(linkError, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange)
-            }
-        }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.08)))
-    }
-
-    /// Shown once this Mac is set up: hand the setup to another Mac.
-    private var setUpAnotherMac: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("**Set up another Mac**")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.users[model.meID].map { "Signed in as \($0.displayName)" } ?? "Signed in with Slack").bold()
+                    Text("Through \(Relay.server?.host ?? "your team server"). Sign in on each of your Macs; every one of them gets every message.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer()
-                Button(copiedLink ? "Copied ✓" : "Copy link code") {
-                    guard let code = LinkCode.export() else { return }
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(code, forType: .string)
-                    copiedLink = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copiedLink = false }
+                Button("Sign out") { model.signOutOfRelay() }
+            }
+            statusLabel
+        } else if let url = Relay.signInURL {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Sign in once on each Mac. It takes a few seconds.").foregroundStyle(.secondary)
+                HStack {
+                    Button { NSWorkspace.shared.open(url) } label: { Text("Sign in with Slack").padding(.horizontal, 8) }
+                        .controlSize(.large).buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                    statusLabel
+                    Spacer()
+                    Button("Try demo") { model.startDemo() }
                 }
             }
-            Text("Paste the code into Slack Glass's Settings on the other Mac to use this same Slack app there. It contains your Slack tokens, so move it privately (AirDrop, Notes, a password manager), not over Slack.")
-                .font(.caption).foregroundStyle(.secondary)
-            Text("Linked Macs share one connection to Slack, and Slack delivers each new message to only one of them. If both Macs run at the same time, each one gets only some of the notifications. To get every notification on both, create a separate Slack app on the second Mac instead.")
-                .font(.caption).foregroundStyle(.secondary)
-            if LinkCode.setupRotates {
-                Text("Your workspace's tokens expire and renew, and each renewal cancels the previous one. Only one linked Mac stays signed in; the other asks for a new link code.")
-                    .font(.caption).foregroundStyle(.orange)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Install Slack Glass with your team's install command and this fills in by itself. Or enter your team server's address:")
+                    .foregroundStyle(.secondary)
+                HStack {
+                    TextField("https://slack-glass-relay.example.workers.dev", text: $serverField)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Sign in with Slack") {
+                        UserDefaults.standard.set(cleanServer, forKey: PrefKey.relayURL)
+                        if let url = Relay.signInURL { NSWorkspace.shared.open(url) }
+                    }
+                    .disabled(URL(string: cleanServer)?.scheme != "https")
+                }
+                HStack {
+                    statusLabel
+                    Spacer()
+                    Button("Try demo") { model.startDemo() }
+                }
             }
         }
     }
 
-    private func linkMac() {
-        guard LinkCode.apply(linkCode) else {
-            linkError = "That isn't a complete link code. Copy it again on the other Mac."
-            return
-        }
-        userToken = Secrets.get(TokenKey.user) ?? ""
-        appToken = Secrets.get(TokenKey.app) ?? ""
-        userRefresh = Secrets.get(TokenKey.userRefresh) ?? ""
-        appRefresh = Secrets.get(TokenKey.appRefresh) ?? ""
-        clientID = Secrets.get(TokenKey.clientID) ?? ""
-        clientSecret = Secrets.get(TokenKey.clientSecret) ?? ""
-        assistantToken = Secrets.get(TokenKey.assistant) ?? ""
-        linkCode = ""
-        linkError = nil
-        hasSetup = true
-        model.connect()
+    private var cleanServer: String {
+        trim(serverField).replacingOccurrences(of: #"/+$"#, with: "", options: .regularExpression)
     }
 
     private func saveAssistant() {

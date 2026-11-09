@@ -1,0 +1,21 @@
+name = "slack-glass-relay"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+# One Durable Object per Slack user: holds their token, their signed-in Macs' live connections,
+# and the last few minutes of events so a Mac that was asleep catches up.
+[[durable_objects.bindings]]
+name = "USERS"
+class_name = "UserHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["UserHub"]
+
+[vars]
+APP_ZIP_URL = "https://github.com/joyrider00/slack-glass/releases/latest/download/Slack-Glass.zip"
+
+# Secrets (set with `npx wrangler secret put NAME`, or run ./setup.sh):
+#   SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_SIGNING_SECRET  (Basic Information → App Credentials)
+#   SLACK_APP_TOKEN  (Basic Information → App-Level Tokens, scope authorizations:read)
+#   STATE_SECRET     (any random string; setup.sh generates it)

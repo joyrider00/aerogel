@@ -106,7 +106,7 @@ final class AppModel: ObservableObject {
     var onOpenSettings: (() -> Void)?
 
     private(set) var api: SlackAPI?
-    private var socket: SocketModeClient?
+    private var socket: EventStream?
     private var watched: [String] = []
     private var watchedSet: Set<String> = []
     private var pendingUsers: Set<String> = []
@@ -133,22 +133,71 @@ final class AppModel: ObservableObject {
     }
 
     var hasTokens: Bool {
-        !(Secrets.get(TokenKey.user) ?? "").isEmpty && !(Secrets.get(TokenKey.app) ?? "").isEmpty
+        Relay.isSignedIn || (!(Secrets.get(TokenKey.user) ?? "").isEmpty && !(Secrets.get(TokenKey.app) ?? "").isEmpty)
     }
 
     var unseenCount: Int { inbox.filter { !$0.seen }.count }
 
     // MARK: - Connection
 
+    /// Connects through the team relay when signed in to one, otherwise through your own Slack app's tokens.
     func connect() {
-        guard let userToken = Secrets.get(TokenKey.user), let appToken = Secrets.get(TokenKey.app) else {
-            connection = .failed("Add your Slack tokens in Settings")
-            return
-        }
         stopDemoIfNeeded()
         socket?.stop()
+        socket = nil
+        if Relay.isSignedIn {
+            connection = .connecting
+            Task {
+                do {
+                    let me = try await Relay.me()
+                    Secrets.set(TokenKey.user, me.token)
+                    start(userToken: me.token, appToken: nil)
+                } catch is Relay.SignedOut {
+                    relaySignedOut()
+                } catch {
+                    connection = .failed("Team server: \(error.localizedDescription)")
+                    // Offline at launch, say: try again shortly.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+                        guard let self, case .failed = self.connection, Relay.isSignedIn else { return }
+                        self.connect()
+                    }
+                }
+            }
+            return
+        }
+        guard let userToken = Secrets.get(TokenKey.user), let appToken = Secrets.get(TokenKey.app) else {
+            connection = .failed("Sign in with Slack in Settings")
+            return
+        }
+        start(userToken: userToken, appToken: appToken)
+    }
+
+    /// Finishes "Sign in with Slack" after the browser hands the session back.
+    func completeRelaySignIn(_ url: URL) -> Bool {
+        guard Relay.completeSignIn(url) else { return false }
+        connect()
+        return true
+    }
+
+    func signOutOfRelay() {
+        Task {
+            await Relay.signOut()
+            relaySignedOut()
+        }
+    }
+
+    private func relaySignedOut() {
+        Secrets.set(TokenKey.relaySession, nil)
+        Secrets.set(TokenKey.user, nil)
+        disconnect()
+        connection = .failed("Signed out. Sign in with Slack again.")
+        onOpenSettings?()
+    }
+
+    /// `appToken` nil = events come from the team relay instead of Socket Mode.
+    private func start(userToken: String, appToken: String?) {
         let api = SlackAPI(userToken: userToken)
-        if TokenRotation.isRotating(userToken) || TokenRotation.canRefresh(TokenKey.userRefresh) {
+        if appToken != nil, TokenRotation.isRotating(userToken) || TokenRotation.canRefresh(TokenKey.userRefresh) {
             api.refreshUserToken = {
                 let t = try await TokenRotation.refresh(accessKey: TokenKey.user, refreshKey: TokenKey.userRefresh)
                 await MainActor.run { ImageCache.shared.token = t }
@@ -193,6 +242,15 @@ final class AppModel: ObservableObject {
                 refreshPresence()
                 backfillActivity()
 
+                guard let appToken else {
+                    let relay = RelayClient()
+                    relay.onEvent = { [weak self] e in self?.handle(event: e) }
+                    relay.onStatus = { [weak self] s in self?.socketStatus(s) }
+                    relay.onSignedOut = { [weak self] in self?.relaySignedOut() }
+                    self.socket = relay
+                    relay.start()
+                    return
+                }
                 let socket = SocketModeClient(appToken: appToken, api: api)
                 if TokenRotation.isRotating(appToken) || TokenRotation.canRefresh(TokenKey.appRefresh) {
                     socket.refreshAppToken = {
@@ -200,19 +258,20 @@ final class AppModel: ObservableObject {
                     }
                 }
                 socket.onEvent = { [weak self] e in self?.handle(event: e) }
-                socket.onStatus = { [weak self] s in
-                    guard let self else { return }
-                    switch s {
-                    case .connecting: if self.connection != .connected { self.connection = .connecting }
-                    case .connected: self.connection = .connected
-                    case .disconnected(let why): self.connection = .failed("Reconnecting… (\(why))")
-                    }
-                }
+                socket.onStatus = { [weak self] s in self?.socketStatus(s) }
                 self.socket = socket
                 socket.start()
             } catch {
                 connection = .failed(error.localizedDescription)
             }
+        }
+    }
+
+    private func socketStatus(_ s: SocketModeClient.Status) {
+        switch s {
+        case .connecting: if connection != .connected { connection = .connecting }
+        case .connected: connection = .connected
+        case .disconnected(let why): connection = .failed("Reconnecting… (\(why))")
         }
     }
 

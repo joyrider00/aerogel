@@ -55,7 +55,9 @@ enum TokenKey {
     static let clientID = "clientID"
     static let clientSecret = "clientSecret"
     static let assistant = "assistantToken"
-    static let all = [user, app, userRefresh, appRefresh, clientID, clientSecret, assistant]
+    /// This Mac's sign-in with the team relay.
+    static let relaySession = "relaySession"
+    static let all = [user, app, userRefresh, appRefresh, clientID, clientSecret, assistant, relaySession]
 }
 
 /// Slack can issue rotating tokens: an access token prefixed `xoxe.` (e.g. `xoxe.xapp-1-…`)
@@ -82,7 +84,7 @@ enum TokenRotation {
                 token: "")
         } catch let e as SlackError where e.code == "invalid_refresh_token" {
             // Refresh tokens are single-use, so a Mac linked to this setup may have renewed it first.
-            throw SlackError(code: "tokens were renewed on another Mac. Paste a new link code from that Mac in Settings")
+            throw SlackError(code: "tokens were renewed on another Mac. Re-enter them in Settings")
         }
         let user = r["authed_user"] as? [String: Any]
         let preferUser = accessKey == TokenKey.user
@@ -96,52 +98,6 @@ enum TokenRotation {
         Secrets.set(accessKey, access)
         if let newRefresh { Secrets.set(refreshKey, newRefresh) }
         return access
-    }
-}
-
-/// A link code carries one Mac's Slack setup (tokens plus assistant settings) to another Mac, so a second Mac
-/// can reuse the Slack app instead of creating its own. It's the secrets themselves, only encoded, not encrypted.
-enum LinkCode {
-    static let prefix = "sglink1."
-    private static let tokenKeys = [TokenKey.user, TokenKey.app, TokenKey.userRefresh, TokenKey.appRefresh,
-                                    TokenKey.clientID, TokenKey.clientSecret, TokenKey.assistant]
-
-    static func export() -> String? {
-        var d: [String: String] = [:]
-        for k in tokenKeys { if let v = Secrets.get(k), !v.isEmpty { d[k] = v } }
-        guard d[TokenKey.user] != nil, d[TokenKey.app] != nil else { return nil }
-        for k in [PrefKey.assistantURL, PrefKey.assistantName] {
-            if let v = UserDefaults.standard.string(forKey: k), !v.isEmpty { d[k] = v }
-        }
-        guard let json = try? JSONEncoder().encode(d) else { return nil }
-        return prefix + json.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-    }
-
-    static func looksLike(_ s: String) -> Bool {
-        s.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix(prefix)
-    }
-
-    /// Stores everything in the code. Returns false if it isn't a valid link code.
-    @discardableResult
-    static func apply(_ code: String) -> Bool {
-        var b = String(code.filter { !$0.isWhitespace }.dropFirst(prefix.count))
-            .replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-        b += String(repeating: "=", count: (4 - b.count % 4) % 4)
-        guard looksLike(code), let data = Data(base64Encoded: b),
-              let d = try? JSONDecoder().decode([String: String].self, from: data),
-              d[TokenKey.user] != nil, d[TokenKey.app] != nil else { return false }
-        for k in tokenKeys { Secrets.set(k, d[k]) }
-        for k in [PrefKey.assistantURL, PrefKey.assistantName] where d[k] != nil {
-            UserDefaults.standard.set(d[k], forKey: k)
-        }
-        return true
-    }
-
-    /// With rotating tokens, each renewal invalidates the previous refresh token, so two Macs can't both stay signed in.
-    static var setupRotates: Bool {
-        [TokenKey.user, TokenKey.app].contains { TokenRotation.isRotating(Secrets.get($0) ?? "") }
     }
 }
 
@@ -167,6 +123,8 @@ enum PrefKey {
     static let assistantURL = "assistantURL"
     static let assistantName = "assistantName"
     static let bubbleOrigin = "bubbleOrigin.v2"
+    /// The team relay's address. The team's install command sets it.
+    static let relayURL = "relayURL"
 }
 
 enum Prefs {
@@ -180,6 +138,10 @@ enum Prefs {
         return n.isEmpty ? "Assistant" : n
     }
     static var assistantCommand: String { assistantName.lowercased().filter { !$0.isWhitespace } }
+    static var relayURL: String? {
+        let s = (d.string(forKey: PrefKey.relayURL) ?? "").trimmingCharacters(in: .whitespaces)
+        return s.isEmpty ? nil : s
+    }
     static var showBubble: Bool { d.object(forKey: PrefKey.showBubble) as? Bool ?? true }
     static var keywords: [String] {
         (d.string(forKey: PrefKey.keywords) ?? "")

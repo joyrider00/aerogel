@@ -10,6 +10,7 @@ Slack Glass is a small macOS menu-bar app built on Slack's public API. It's free
 
 - [What you get](#what-you-get)
 - [Install](#install)
+- [Set up a team server](#set-up-a-team-server)
 - [Connect your Slack](#connect-your-slack)
 - [Using it](#using-it)
 - [Slash commands](#slash-commands)
@@ -38,7 +39,15 @@ Slack Glass is a small macOS menu-bar app built on Slack's public API. It's free
 
 ## Install
 
-There's no download yet, so you build the app yourself. It takes about two minutes and needs no programming knowledge.
+**If your team has a Slack Glass server**, open Terminal and paste the command your team shared. It looks like this:
+
+```sh
+curl -fsSL https://slack-glass-relay.yourteam.workers.dev/install | bash
+```
+
+Slack Glass opens. Click **Sign in with Slack**, then **Allow**. That's all. Do the same on each of your Macs; every Mac you're signed in on gets every message.
+
+**Otherwise**, build the app yourself. It takes about two minutes and needs no programming knowledge.
 
 **Requirements:** macOS 13 Ventura or newer, and Apple's free command-line developer tools.
 
@@ -60,7 +69,23 @@ There's no download yet, so you build the app yourself. It takes about two minut
    ```
    This copies **Slack Glass.app** to your Applications folder and opens it, which brings up the Settings window.
 
+## Set up a team server
+
+A team server (the `relay/` folder) is a small Cloudflare Worker. It makes setup one click for everyone on your team and sends each message to every Mac a person is signed in on. One person sets it up once, in about ten minutes, on a free Cloudflare account:
+
+```sh
+relay/setup.sh
+```
+
+The script deploys the server, opens its setup page, and asks for four values from the Slack app that the page creates for you: the **Client ID**, **Client Secret** and **Signing Secret**, plus an **app-level token** with the `authorizations:read` scope. When it finishes it prints your team's install command. A Slack admin may need to approve the app.
+
+How it works: the team's Slack app sends its events to the server. For each event, the server asks Slack which teammates can see it and pushes it to all of their signed-in Macs over a live connection. It keeps the last 15 minutes, so a Mac that was asleep catches up when it wakes. It stores each signed-in person's Slack token (so all their Macs can use it), hashed device sessions, and that 15-minute buffer. Signing out on your last Mac deletes your token. Sending, history, search and files still go straight from your Mac to Slack.
+
+To publish a new build for the install command, run `scripts/release.sh <version>`.
+
 ## Connect your Slack
+
+Without a team server, Slack Glass connects through a private Slack app you create yourself (Settings → **Use your own Slack app instead**). Use a separate app on each Mac: Slack splits one app's messages between all the Macs connected to it.
 
 Slack Glass talks to Slack through a small private Slack app that **you** create in your own workspace. Nobody else, including the author of Slack Glass, has access to it. Setup takes about a minute. The Settings window walks you through these steps:
 
@@ -70,8 +95,6 @@ Slack Glass talks to Slack through a small private Slack app that **you** create
 4. **Only if a token starts with `xoxe.`:** your workspace issues tokens that expire. Settings shows a fourth step. Paste the **Refresh token** from the same dialog, plus the **Client ID** and **Client Secret** from **Basic Information → App Credentials**, so Slack Glass can renew the tokens on its own.
 5. Click **Save & Connect**. The status should change to **Connected**.
 6. **Turn off Slack's own desktop notifications** (Slack → Settings → Notifications) so you don't get every message twice.
-
-**Already set up on another Mac?** You don't have to create the app again. On the Mac that's connected, open Settings and click **Copy link code**. On the new Mac, paste the code into **Already using Slack Glass on another Mac?** and click **Link this Mac**. The code contains your tokens, so move it privately, for example with AirDrop, not over Slack. Linked Macs share one Slack app, and Slack delivers each new message to only one connection. If both Macs run at the same time, each gets only some of the notifications. To get every notification on both, create a separate app on the second Mac. If your tokens rotate (`xoxe.`), only one linked Mac stays signed in.
 
 **Why does everyone create their own app?** Slack delivers messages over a live connection to whoever holds the app-level token. With one shared app, everyone's DMs would flow through the same connection. With one app per person, your messages go only to your Mac. Single-workspace apps also avoid the strict rate limits Slack places on apps that aren't in its Marketplace.
 

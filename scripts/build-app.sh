@@ -40,6 +40,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSHumanReadableCopyright</key><string>MIT License</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>io.github.joyrider00.slackglass</string>
+      <key>CFBundleURLSchemes</key><array><string>slackglass</string></array>
+    </dict>
+  </array>
 </dict>
 </plist>
 PLIST

@@ -73,6 +73,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// slackglass://signed-in?… arrives from the browser once Slack approves "Sign in with Slack".
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where model.completeRelaySignIn(url) {
+            openSettings()
+        }
+    }
+
     // MARK: - Status item
 
     private func setUpStatusItem() {
