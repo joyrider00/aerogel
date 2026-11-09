@@ -65,6 +65,21 @@ extension AppModel {
         searchFocusTick += 1
     }
 
+    func clearSearchFields() {
+        searchTask?.cancel()
+        searchQuery = ""
+        searchResults = []
+        searchTotal = 0
+        searchedQuery = ""
+        searchError = nil
+        searching = false
+        searchIndex = 0
+        chatQuery = ""
+        chatIndex = 0
+        switcherQuery = ""
+        switcherIndex = 0
+    }
+
     func openSearch() {
         showSearch = true
         searchFocusTick += 1

@@ -59,6 +59,8 @@ final class AppModel: ObservableObject {
     var searchTask: Task<Void, Never>?
     /// The message to scroll to and highlight after opening a search result.
     @Published var focusTs: String?
+    /// The conversation open most recently, reopened when the panel comes back.
+    private(set) var lastConversation: ConversationRef?
     @Published var chatQuery = ""
     @Published private(set) var recents: [String] = []
     @Published var sendTick = 0
@@ -548,6 +550,7 @@ final class AppModel: ObservableObject {
             focusTs = focus
         }
         current = ref
+        lastConversation = ref
         noteActivity(ref.channel, ts: Date().timeIntervalSince1970)
         recents.removeAll { $0 == ref.channel }
         recents.insert(ref.channel, at: 0)

@@ -119,12 +119,16 @@ final class HUDController {
     func toggle() { isVisible ? hide() : show() }
 
     func show(_ ref: ConversationRef? = nil, focus: Bool = true) {
-        if let ref { model.open(ref) }
-        // Open on Chats when nothing needs you, on Activity when something needs you.
         if !isVisible {
+            // Every open starts with empty search boxes…
+            model.clearSearchFields()
+            // …on Chats when nothing needs you, on Activity when something does…
             model.showChats = model.inbox.isEmpty
             model.showSearch = false
+            // …and with the chat you last had open, even if you backed out of it before closing.
+            if ref == nil, model.current == nil, let last = model.lastConversation { model.open(last, pushHistory: false) }
         }
+        if let ref { model.open(ref) }
         layout(conversationOpen: model.current != nil)
         panel.orderFrontRegardless()
         if focus { panel.makeKey() }
