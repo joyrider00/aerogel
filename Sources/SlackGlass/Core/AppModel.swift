@@ -577,6 +577,23 @@ final class AppModel: ObservableObject {
 
     /// Where the last opened item sat before it left the inbox.
     private var removedInboxIndex: Int?
+    /// Items that left Activity because you opened them, in case you leave a half-typed reply.
+    private var openedFromActivity: [String: InboxItem] = [:]
+
+    /// You switched away mid-reply: keep that conversation in Activity (✎, not unread) so you can get back
+    /// to the exact thread. It leaves again when you open it, send, or empty the draft.
+    private func keepDraftInActivity(_ ref: ConversationRef) {
+        let id = InboxItem.makeID(ref.channel, ref.threadTs)
+        let stashed = openedFromActivity.removeValue(forKey: id)
+        let text = draft(for: ref)
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !inbox.contains(where: { $0.id == id }) else { return }
+        var item = stashed ?? InboxItem(channel: ref.channel, threadTs: ref.threadTs, ts: SlackTS.now(), user: meID,
+                                        text: text, reason: isDirect(ref.channel) && ref.threadTs == nil ? .dm : .thread)
+        item.seen = true
+        inbox.insert(item, at: 0)
+        persist()
+    }
 
     func moveSelection(_ delta: Int) {
         guard !inbox.isEmpty else { return }
@@ -671,6 +688,7 @@ final class AppModel: ObservableObject {
     // MARK: - Conversation
 
     func open(_ ref: ConversationRef, pushHistory: Bool = true, focus: String? = nil) {
+        if let leaving = current, leaving != ref { keepDraftInActivity(leaving) }
         if current != ref || focus != nil {
             if pushHistory, let cur = current, cur != ref {
                 history.removeAll { $0 == ref }
@@ -694,6 +712,7 @@ final class AppModel: ObservableObject {
         if let i = inbox.firstIndex(where: { $0.ref == ref }) {
             selectedInboxID = inbox[i].id
             removedInboxIndex = i
+            openedFromActivity[inbox[i].id] = inbox[i]
             inbox.remove(at: i)
             persist()
         }
@@ -798,6 +817,7 @@ final class AppModel: ObservableObject {
     }
 
     func closeConversation() {
+        if let leaving = current { keepDraftInActivity(leaving) }
         assistantMode = false
         history = []
         current = nil
