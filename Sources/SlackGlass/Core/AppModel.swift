@@ -850,9 +850,9 @@ final class AppModel: ObservableObject {
         if let u = URL(string: s) { NSWorkspace.shared.open(u) }
     }
 
-    /// Images open in Slack Glass's viewer; videos and other files open in Slack.
+    /// Images and videos open in Slack Glass's viewer; other files open in Slack.
     func openFile(_ f: SlackFile) {
-        if f.isImage, !f.isVideo {
+        if f.isImage || f.isVideo {
             ImageViewer.shared.show(f)
         } else if let p = f.permalink.flatMap(URL.init(string:)) {
             NSWorkspace.shared.open(p)

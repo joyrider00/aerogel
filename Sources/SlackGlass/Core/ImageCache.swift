@@ -20,6 +20,22 @@ final class ImageCache {
         return try? await URLSession.shared.data(for: req).0
     }
 
+    /// Downloads a file to a private temp location (videos, which AVPlayer can't fetch with a token).
+    func download(_ url: URL, ext: String) async -> URL? {
+        var req = URLRequest(url: url)
+        if let token, let host = url.host, host == "slack.com" || host.hasSuffix(".slack.com") {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        guard let (tmp, resp) = try? await URLSession.shared.download(for: req),
+              (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
+              (resp.mimeType ?? "").hasPrefix("text/html") == false else { return nil }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("SlackGlass-media", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dest = dir.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
+        do { try FileManager.default.moveItem(at: tmp, to: dest) } catch { return nil }
+        return dest
+    }
+
     func image(for url: URL) async -> NSImage? {
         if let img = cache.object(forKey: url as NSURL) { return img }
         if let t = inflight[url] { return await t.value.flatMap(NSImage.init(data:)) }

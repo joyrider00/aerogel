@@ -29,7 +29,7 @@ Slack Glass is a small macOS menu-bar app built on Slack's public API. It's free
 - **Reply like Slack.** Enter sends, Shift-Enter adds a new line, and typing `@` suggests people to mention. "Also send to #channel" works too. You can attach files by pasting, by dragging them (screenshots included), or with the paperclip.
 - **Schedule, snooze and drafts.** Schedule a message for later. Snooze an item until it matters. Whatever you half-typed in a conversation is still there when you come back.
 - **React, edit, delete and copy links.** Hover a message to get quick reactions and the full emoji picker, including your workspace's custom emoji.
-- **Images and presence.** Click an image to see it full size; you can copy it or save it to Downloads. Green dots show who's online.
+- **Images, videos and presence.** Click an image to see it full size, or a video to play it right there; you can copy either or save it to Downloads. Green dots show who's online.
 - **Slack links open in the Slack app,** not in a browser tab.
 - **Slash commands made from files.** Drop `party.gif` into a folder and `/party` sends it.
 - **An optional AI assistant.** Bring your own assistant server and type `/assistant` to have it read a thread or draft a reply. Nothing is sent until you click Send.
@@ -127,7 +127,7 @@ Hover an inbox item and click the moon to snooze it for 20 minutes, 1 hour, 3 ho
 | ⌘W | Close the panel |
 | Esc | Back out one layer: picker → assistant → edit → conversation → close |
 
-In the image viewer, ⌘C copies the image, ⌘S saves it to Downloads, and Esc closes it (and only it).
+In the image and video viewer, Space plays or pauses a video, ⌘C copies, ⌘S saves to Downloads, and Esc closes the viewer (and only the viewer).
 
 ## Slash commands
 

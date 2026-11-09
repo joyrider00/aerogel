@@ -58,6 +58,8 @@ struct SlackFile: Codable, Hashable, Identifiable {
     var thumb_360: String?
     var thumb_480: String?
     var thumb_video: String?
+    /// A playable MP4 Slack makes for some uploads (e.g. .mov files).
+    var mp4: String?
     var permalink: String?
     var size: Int?
 
