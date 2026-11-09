@@ -65,6 +65,8 @@ enum Relay {
 /// Remembers the last event it saw so a reconnect (after sleep or a network change) replays what it missed.
 final class RelayClient: EventStream {
     var onEvent: (([String: Any]) -> Void)?
+    /// Read/snooze marks from your other Macs (and, on every connect, the ones you missed).
+    var onMarks: (([[String: Any]]) -> Void)?
     var onStatus: ((SocketModeClient.Status) -> Void)?
     var onSignedOut: (() -> Void)?
 
@@ -75,6 +77,9 @@ final class RelayClient: EventStream {
     private var wakeObserver: NSObjectProtocol?
     private var lastSeq = 0
     private var seenEventIDs: [String] = []
+    private var connected = false
+    /// Marks made while offline; sent once the relay says hello.
+    private var outbox: [[String: Any]] = []
 
     func start() {
         guard !running else { return }
@@ -95,8 +100,30 @@ final class RelayClient: EventStream {
         task = nil
     }
 
+    /// Tells your other Macs you handled an Activity item. Queued while disconnected.
+    func sendMark(_ mark: [String: Any]) {
+        outbox.append(mark)
+        if outbox.count > 200 { outbox.removeFirst(outbox.count - 200) }
+        flush()
+    }
+
+    private func flush() {
+        guard connected, let t = task else { return }
+        let pending = outbox
+        outbox.removeAll()
+        for m in pending {
+            guard let d = try? JSONSerialization.data(withJSONObject: ["type": "mark", "mark": m]),
+                  let s = String(data: d, encoding: .utf8) else { continue }
+            t.send(.string(s)) { [weak self] error in
+                guard error != nil else { return }
+                DispatchQueue.main.async { self?.outbox.insert(m, at: 0) } // resent after reconnecting
+            }
+        }
+    }
+
     private func connect() {
         guard running else { return }
+        connected = false
         guard let server = Relay.server, let session = Relay.session,
               var c = URLComponents(url: server.appendingPathComponent("v1/ws"), resolvingAgainstBaseURL: false) else {
             onSignedOut?()
@@ -148,7 +175,11 @@ final class RelayClient: EventStream {
             backoff = 1
             // The relay's counter restarted (e.g. everyone signed out): start counting from its value.
             if let seq = msg["seq"] as? Int, seq < lastSeq { lastSeq = seq }
+            connected = true
             onStatus?(.connected)
+            flush()
+        case "marks":
+            if let marks = msg["marks"] as? [[String: Any]], !marks.isEmpty { onMarks?(marks) }
         case "event":
             if let seq = msg["seq"] as? Int { lastSeq = max(lastSeq, seq) }
             guard let event = msg["event"] as? [String: Any] else { return }
@@ -176,12 +207,14 @@ final class RelayClient: EventStream {
 
     private func reconnectNow() {
         guard running else { return }
+        connected = false
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         connect()
     }
 
     private func scheduleReconnect(_ reason: String) {
+        connected = false
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         guard running else { return }

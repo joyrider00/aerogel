@@ -28,6 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         bubble.onClick = { [weak self] in self?.toggleHUD() }
         hud.onVisibilityChange = { [weak self] visible in self?.bubble.hudVisibilityChanged(visible) }
         model.onNotify = { [weak self] item in self?.notify(item) }
+        model.onCleared = { [weak self] id, toast in
+            if toast { self?.toasts.dismissIfIdle(id) }
+            self?.removeBanners(id)
+        }
         model.onOpenSettings = { [weak self] in self?.openSettings() }
         model.onShowHUD = { [weak self] ref in
             self?.toasts.clear()
@@ -159,6 +163,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         c.userInfo = ["channel": item.channel, "thread": item.threadTs ?? ""]
         c.threadIdentifier = item.id
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
+    }
+
+    /// Takes down Notification Center banners for an item you handled on another Mac.
+    private func removeBanners(_ id: String) {
+        guard canUseUserNotifications else { return }
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { delivered in
+            let ids = delivered.filter { $0.request.content.threadIdentifier == id }.map(\.request.identifier)
+            if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
+        }
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,

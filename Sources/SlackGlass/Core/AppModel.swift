@@ -103,6 +103,9 @@ final class AppModel: ObservableObject {
 
     var hudVisible = false
     var onNotify: ((InboxItem) -> Void)?
+    /// An Activity item was handled somewhere else (another Mac, or your reply): take down its toast and
+    /// banner here. `toast` false leaves the toast alone (it may be showing "Sent ✓").
+    var onCleared: ((_ id: String, _ toast: Bool) -> Void)?
     var onOpenSettings: (() -> Void)?
 
     private(set) var api: SlackAPI?
@@ -245,6 +248,7 @@ final class AppModel: ObservableObject {
                 guard let appToken else {
                     let relay = RelayClient()
                     relay.onEvent = { [weak self] e in self?.handle(event: e) }
+                    relay.onMarks = { [weak self] m in self?.applyMarks(m) }
                     relay.onStatus = { [weak self] s in self?.socketStatus(s) }
                     relay.onSignedOut = { [weak self] in self?.relaySignedOut() }
                     self.socket = relay
@@ -439,6 +443,7 @@ final class AppModel: ObservableObject {
         if msg.user == meID {
             watch(ch, msg.thread_ts ?? msg.ts)
             clearInbox(channel: ch, threadTs: msg.thread_ts)
+            onCleared?(InboxItem.makeID(ch, msg.thread_ts), false)
             return
         }
 
@@ -555,6 +560,7 @@ final class AppModel: ObservableObject {
     }
 
     func markDone(_ item: InboxItem) {
+        syncRead(item.ref, upTo: item.ts)
         let idx = inbox.firstIndex(of: item)
         inbox.removeAll { $0.id == item.id }
         if selectedInboxID == item.id, let idx {
@@ -564,6 +570,7 @@ final class AppModel: ObservableObject {
     }
 
     func clearAll() {
+        inbox.forEach { syncRead($0.ref, upTo: $0.ts) }
         inbox.removeAll()
         persist()
     }
@@ -597,6 +604,70 @@ final class AppModel: ObservableObject {
                                         lastActivity: lastActivity))
     }
 
+    // MARK: - Read state shared between your Macs (through the team relay)
+
+    private func syncRead(_ ref: ConversationRef, upTo ts: String) {
+        guard !isDemo, let relay = socket as? RelayClient else { return }
+        relay.sendMark(["op": "read", "channel": ref.channel, "thread_ts": ref.threadTs ?? NSNull(), "ts": ts])
+    }
+
+    /// `until` in the past = woken early.
+    private func syncSnooze(_ item: InboxItem, until: Date? = nil) {
+        guard !isDemo, let relay = socket as? RelayClient, let until = until ?? item.snoozeUntil else { return }
+        var mark: [String: Any] = ["op": "snooze", "channel": item.channel, "thread_ts": item.threadTs ?? NSNull(),
+                                   "ts": item.ts, "until": until.timeIntervalSince1970]
+        if let d = try? JSONEncoder().encode(item), let obj = try? JSONSerialization.jsonObject(with: d) { mark["item"] = obj }
+        relay.sendMark(mark)
+    }
+
+    /// Another Mac read or snoozed these. Only clears what that Mac had seen: a newer message stays.
+    func applyMarks(_ marks: [[String: Any]]) {
+        var changed = false
+        for m in marks {
+            guard let channel = m["channel"] as? String, let ts = m["ts"] as? String, let upTo = Double(ts) else { continue }
+            let id = InboxItem.makeID(channel, m["thread_ts"] as? String)
+            let covered = { (i: InboxItem) in i.id == id && (Double(i.ts) ?? 0) <= upTo }
+            switch m["op"] as? String {
+            case "read":
+                guard inbox.contains(where: covered) || snoozed.contains(where: covered) else { continue }
+                inbox.removeAll(where: covered)
+                snoozed.removeAll(where: covered)
+            case "snooze":
+                guard let until = (m["until"] as? NSNumber)?.doubleValue else { continue }
+                let date = Date(timeIntervalSince1970: until)
+                if date <= Date() {
+                    // Woken early on another Mac (or its time passed): bring it back here too, quietly.
+                    if let s = snoozed.first(where: { $0.id == id }), (s.snoozeUntil ?? .distantPast) > Date() {
+                        snoozed.removeAll { $0.id == id }
+                        var w = s
+                        w.snoozeUntil = nil
+                        inbox.removeAll { $0.id == id }
+                        inbox.insert(w, at: 0)
+                        persist()
+                    }
+                    continue
+                }
+                if let s = snoozed.first(where: { $0.id == id }),
+                   abs((s.snoozeUntil ?? .distantPast).timeIntervalSince(date)) < 1 { continue }
+                var item = inbox.first(where: { $0.id == id }) ?? snoozed.first(where: { $0.id == id })
+                if item == nil, let obj = m["item"], let d = try? JSONSerialization.data(withJSONObject: obj) {
+                    item = try? JSONDecoder().decode(InboxItem.self, from: d)
+                }
+                guard var item, (Double(item.ts) ?? 0) <= upTo else { continue }
+                item.snoozeUntil = date
+                inbox.removeAll { $0.id == id }
+                snoozed.removeAll { $0.id == id }
+                snoozed.append(item)
+            default:
+                continue
+            }
+            if selectedInboxID == id { selectedInboxID = inbox.first?.id }
+            changed = true
+            onCleared?(id, true)
+        }
+        if changed { persist() }
+    }
+
     // MARK: - Conversation
 
     func open(_ ref: ConversationRef, pushHistory: Bool = true, focus: String? = nil) {
@@ -626,6 +697,7 @@ final class AppModel: ObservableObject {
             inbox.remove(at: i)
             persist()
         }
+        syncRead(ref, upTo: SlackTS.now()) // you're looking at all of it, on every Mac
         focusComposerTick += 1
         if let c = conversations[ref.channel], c.is_im == true, let u = c.user { fetchPresence([u]) }
         Task { await load(ref) }
@@ -1176,6 +1248,7 @@ extension AppModel {
         snoozed.append(s)
         if selectedInboxID == item.id { selectedInboxID = inbox.first?.id }
         persist()
+        syncSnooze(s)
         notice = "Snoozed until \(Self.shortDate(date))"
     }
 
@@ -1192,7 +1265,7 @@ extension AppModel {
         inbox.removeAll { $0.id == item.id }
         inbox.insert(w, at: 0)
         persist()
-        if notify { onNotify?(w) }
+        if notify { onNotify?(w) } else { syncSnooze(w, until: Date()) } // woken by hand: on every Mac
     }
 
     func wakeSnoozed() {

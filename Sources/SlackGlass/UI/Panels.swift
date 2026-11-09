@@ -293,6 +293,12 @@ final class ToastController: ObservableObject {
         }
     }
 
+    /// Handled on another Mac: dismiss, unless you're typing a reply into it here.
+    func dismissIfIdle(_ id: String) {
+        guard !engaged.contains(id) else { return }
+        dismiss(id)
+    }
+
     func clear() {
         items.removeAll()
         engaged.removeAll()

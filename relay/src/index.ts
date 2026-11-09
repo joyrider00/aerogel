@@ -38,6 +38,10 @@ const USER_EVENTS = [
 
 const BUFFER_SECONDS = 15 * 60;
 const BUFFER_MAX = 500;
+// Read/snooze marks shared between one person's Macs. Kept longer than events so a Mac that was off for
+// days still clears what you already handled elsewhere.
+const MARK_SECONDS = 14 * 24 * 3600;
+const MARK_MAX = 1000;
 
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -208,6 +212,8 @@ async function toUserHub(req: Request, url: URL, env: Env): Promise<Response> {
 
 type Account = { token: string; user_id: string; team_id: string };
 type Buffered = { seq: number; at: number; event_id: string; event: unknown };
+/// One Mac handled an Activity item: "read" (opened, done, cleared) up to `ts`, or "snooze" until `until`.
+type Mark = { op: "read" | "snooze"; id: string; channel: string; thread_ts: string | null; ts: string; until?: number; item?: unknown; at: number };
 
 export class UserHub extends DurableObject<Env> {
   private async account(): Promise<Account | undefined> { return this.ctx.storage.get<Account>("account"); }
@@ -270,16 +276,58 @@ export class UserHub extends DurableObject<Env> {
       const buf = (await this.ctx.storage.get<Buffered[]>("buf")) ?? [];
       for (const b of buf) if (b.seq > after) server.send(JSON.stringify({ type: "event", ...b }));
     }
+    // What your other Macs read or snoozed, so this one clears the same items (it may have been off for days).
+    server.send(JSON.stringify({ type: "marks", marks: await this.marks() }));
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    if (message === "ping") ws.send("pong");
+    if (message === "ping") { ws.send("pong"); return; }
+    if (typeof message !== "string" || message.length > 16_000) return;
+    let m: any;
+    try { m = JSON.parse(message); } catch { return; }
+    if (m?.type !== "mark") return;
+    const mark = cleanMark(m.mark);
+    if (!mark) return;
+    await this.ctx.storage.put(`mark:${mark.id}`, mark);
+    const out = JSON.stringify({ type: "marks", marks: [mark] });
+    for (const other of this.ctx.getWebSockets()) {
+      if (other !== ws) try { other.send(out); } catch {}
+    }
+    await this.pruneMarks();
+  }
+
+  private async marks(): Promise<Mark[]> {
+    const now = Date.now() / 1000;
+    const all = [...(await this.ctx.storage.list<Mark>({ prefix: "mark:" })).values()];
+    return all.filter((m) => now - m.at < MARK_SECONDS).sort((a, b) => a.at - b.at).slice(-MARK_MAX);
+  }
+
+  private async pruneMarks(): Promise<void> {
+    const now = Date.now() / 1000;
+    const all = [...(await this.ctx.storage.list<Mark>({ prefix: "mark:" })).entries()].sort((a, b) => b[1].at - a[1].at);
+    const drop = all.filter(([, m], i) => i >= MARK_MAX || now - m.at >= MARK_SECONDS).map(([k]) => k);
+    for (let i = 0; i < drop.length; i += 128) await this.ctx.storage.delete(drop.slice(i, i + 128));
   }
 
   async webSocketClose(ws: WebSocket, code: number): Promise<void> {
     try { ws.close(code === 1005 ? 1000 : code); } catch {}
   }
+}
+
+function cleanMark(m: any): Mark | null {
+  const str = (v: unknown, max = 64) => (typeof v === "string" && v.length > 0 && v.length <= max ? v : null);
+  const channel = str(m?.channel), ts = str(m?.ts);
+  const thread = m?.thread_ts == null ? null : str(m.thread_ts);
+  if (!channel || !ts || (m?.thread_ts != null && !thread)) return null;
+  if (m.op !== "read" && m.op !== "snooze") return null;
+  const mark: Mark = { op: m.op, id: `${channel}:${thread ?? ""}`, channel, thread_ts: thread, ts, at: Date.now() / 1000 };
+  if (m.op === "snooze") {
+    if (typeof m.until !== "number" || !isFinite(m.until)) return null;
+    mark.until = m.until;
+    if (m.item && typeof m.item === "object" && JSON.stringify(m.item).length < 8_000) mark.item = m.item;
+  }
+  return mark;
 }
 
 function hub(env: Env, team: string, user: string) {
