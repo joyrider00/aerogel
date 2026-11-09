@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Builds Aerogel.app (release, universal when possible) into ./build.
+# Builds "Slack Glass.app" (release, universal when possible) into ./build.
 #   scripts/build-app.sh            build
-#   scripts/build-app.sh --install  build and copy to /Applications
+#   scripts/build-app.sh --install  build, copy to /Applications and launch
 #   scripts/build-app.sh --run      build and launch
-#   scripts/build-app.sh --demo     build and launch with the fake workspace
+#   scripts/build-app.sh --demo     build and launch with a fake workspace (no Slack needed)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP=build/Aerogel.app
+NAME="Slack Glass"
+EXE=SlackGlass
+APP="build/$NAME.app"
 VERSION=${VERSION:-0.1.0}
 
 ARCHS=(--arch arm64 --arch x86_64)
@@ -16,21 +18,21 @@ if ! swift build -c release "${ARCHS[@]}" >/dev/null 2>&1; then
   ARCHS=()
 fi
 swift build -c release ${ARCHS[@]+"${ARCHS[@]}"}
-BIN=$(swift build -c release ${ARCHS[@]+"${ARCHS[@]}"} --show-bin-path)/Aerogel
+BIN=$(swift build -c release ${ARCHS[@]+"${ARCHS[@]}"} --show-bin-path)/$EXE
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Aerogel"
+cp "$BIN" "$APP/Contents/MacOS/$EXE"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Aerogel</string>
-  <key>CFBundleDisplayName</key><string>Aerogel</string>
-  <key>CFBundleIdentifier</key><string>com.aerogel.hud</string>
-  <key>CFBundleExecutable</key><string>Aerogel</string>
+  <key>CFBundleName</key><string>$NAME</string>
+  <key>CFBundleDisplayName</key><string>$NAME</string>
+  <key>CFBundleIdentifier</key><string>io.github.joyrider00.slackglass</string>
+  <key>CFBundleExecutable</key><string>$EXE</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${VERSION}</string>
@@ -42,26 +44,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Sign with a stable identity so Keychain access survives rebuilds. Uses a local
-# "Aerogel Local Signing" certificate if present (see scripts/make-signing-cert.sh),
-# otherwise an ad-hoc signature (Keychain will re-prompt after every rebuild).
-if [ -z "${SIGN_IDENTITY:-}" ]; then
-  if security find-identity -p codesigning 2>/dev/null | grep -q "Aerogel Local Signing"; then
-    SIGN_IDENTITY="Aerogel Local Signing"
-  else
-    SIGN_IDENTITY="-"
-  fi
-fi
-codesign --force --deep --sign "$SIGN_IDENTITY" "$APP" >/dev/null
-echo "Signed with: $SIGN_IDENTITY"
+# Ad-hoc signature by default (nothing depends on a stable identity). Set SIGN_IDENTITY to use your own.
+codesign --force --deep --sign "${SIGN_IDENTITY:--}" "$APP" >/dev/null
 echo "Built $APP"
 
 case "${1:-}" in
   --install)
-    rm -rf /Applications/Aerogel.app
+    rm -rf "/Applications/$NAME.app"
     cp -R "$APP" /Applications/
-    echo "Installed to /Applications/Aerogel.app"
-    open /Applications/Aerogel.app ;;
+    echo "Installed to /Applications/$NAME.app"
+    open "/Applications/$NAME.app" ;;
   --run)  open "$APP" ;;
   --demo) open "$APP" --args --demo ;;
 esac

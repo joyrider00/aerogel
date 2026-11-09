@@ -78,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let b = statusItem.button {
-            b.image = NSImage(systemSymbolName: "bubble.left.and.text.bubble.right", accessibilityDescription: "Aerogel")
+            b.image = NSImage(systemSymbolName: "bubble.left.and.text.bubble.right", accessibilityDescription: "Slack Glass")
             b.image?.isTemplate = true
             b.imagePosition = .imageLeading
             b.target = self
@@ -98,7 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             menu.addItem(withTitle: "Show HUD  ⌃⌥Space", action: #selector(toggleHUD), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Settings…", action: #selector(openSettingsAction), keyEquivalent: ",").target = self
             menu.addItem(.separator())
-            menu.addItem(withTitle: "Quit Aerogel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+            menu.addItem(withTitle: "Quit Slack Glass", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
             statusItem.menu = menu
             statusItem.button?.performClick(nil)
             statusItem.menu = nil
@@ -119,7 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 580, height: 720),
                              styleMask: [.titled, .closable, .miniaturizable],
                              backing: .buffered, defer: false)
-            w.title = "Aerogel"
+            w.title = "Slack Glass"
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: SettingsView().environmentObject(model))
             w.center()
@@ -179,7 +179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let appItem = NSMenuItem()
         main.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Quit Aerogel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit Slack Glass", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
 
         let editItem = NSMenuItem()

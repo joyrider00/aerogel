@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 /// Turns whatever was dragged or pasted into files we own. Screenshot thumbnails hand over a temporary file
 /// that's deleted once the drag ends, and some apps send a file promise or raw image data instead of a file,
-/// so everything is copied into Aerogel's own temp folder right away.
+/// so everything is copied into Slack Glass's own temp folder right away.
 enum DropReader {
     static var types: [NSPasteboard.PasteboardType] {
         [.fileURL, .png, .tiff] + NSFilePromiseReceiver.readableDraggedTypes.map { NSPasteboard.PasteboardType($0) }
@@ -17,7 +17,7 @@ enum DropReader {
 
     private static func stash() -> URL {
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Aerogel-attachments", isDirectory: true)
+            .appendingPathComponent("SlackGlass-attachments", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir

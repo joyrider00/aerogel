@@ -26,9 +26,9 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
-                Text("Aerogel talks to Slack through a private app that only you install, in your own workspace. Setup takes about a minute.")
+                Text("Slack Glass talks to Slack through a private app that only you install, in your own workspace. Setup takes about a minute.")
                     .font(.callout).foregroundStyle(.secondary)
-                step(1, "Create the app from Aerogel's manifest") {
+                step(1, "Create the app from Slack Glass's manifest") {
                     Button("Create Slack app ↗") { NSWorkspace.shared.open(SlackManifest.createAppURL) }
                 }
                 step(2, "In the app: **Install to Workspace**, then copy the **User OAuth Token** from *OAuth & Permissions*") {
@@ -38,7 +38,7 @@ struct SettingsView: View {
                     SecureField("xapp-… or xoxe.xapp-…", text: $appToken).textFieldStyle(.roundedBorder)
                 }
                 if rotating {
-                    step(4, "These tokens **rotate**. So Aerogel can renew them before they expire, paste the **Refresh token** from the same dialog, plus the **Client ID** and **Client Secret** from *Basic Information → App Credentials*") {
+                    step(4, "These tokens **rotate**. So Slack Glass can renew them before they expire, paste the **Refresh token** from the same dialog, plus the **Client ID** and **Client Secret** from *Basic Information → App Credentials*") {
                         VStack(spacing: 6) {
                             if TokenRotation.isRotating(cleanApp) {
                                 SecureField("App-level refresh token (xoxe-1-…)", text: $appRefresh).textFieldStyle(.roundedBorder)
@@ -90,7 +90,7 @@ struct SettingsView: View {
             } header: { Text("Notifications") }
 
             Section {
-                Text("Connect any assistant server that speaks Aerogel's assistant API (see the README). Type **/\(assistantName.isEmpty ? "assistant" : assistantName.lowercased().filter { !$0.isWhitespace })** in a conversation to ask it about that conversation or tell it what to do. Anything it drafts shows as a card you send yourself.")
+                Text("Connect any assistant server that speaks Slack Glass's assistant API (see the README). Type **/\(assistantName.isEmpty ? "assistant" : assistantName.lowercased().filter { !$0.isWhitespace })** in a conversation to ask it about that conversation or tell it what to do. Anything it drafts shows as a card you send yourself.")
                     .font(.callout).foregroundStyle(.secondary)
                 TextField("Name", text: $assistantName, prompt: Text("Assistant"))
                 TextField("Server", text: $assistantURL, prompt: Text("https://assistant.example.com"))
@@ -150,7 +150,7 @@ struct SettingsView: View {
                         model.disconnect()
                     }
                     Spacer()
-                    Button("Quit Aerogel") { NSApp.terminate(nil) }
+                    Button("Quit Slack Glass") { NSApp.terminate(nil) }
                 }
             }
         }

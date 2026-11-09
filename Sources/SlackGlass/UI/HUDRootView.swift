@@ -120,7 +120,7 @@ struct InboxView: View {
                 Button("Clear all") { model.clearAll() }
                 Divider()
                 Button("Settings…") { model.onOpenSettings?() }
-                Button("Quit Aerogel") { NSApp.terminate(nil) }
+                Button("Quit Slack Glass") { NSApp.terminate(nil) }
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: 12, weight: .medium)).frame(width: 24, height: 24)
             }

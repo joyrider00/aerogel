@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "Aerogel",
+    name: "SlackGlass",
     platforms: [.macOS(.v13)],
     targets: [
         .executableTarget(
-            name: "Aerogel",
-            path: "Sources/Aerogel"
+            name: "SlackGlass",
+            path: "Sources/SlackGlass"
         )
     ]
 )

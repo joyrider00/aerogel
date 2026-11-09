@@ -1,7 +1,6 @@
 import Foundation
-import Security
 
-/// Tokens live in one private file (`~/Library/Application Support/Aerogel/secrets.json`, readable only by
+/// Tokens live in one private file (`~/Library/Application Support/Slack Glass/secrets.json`, readable only by
 /// your macOS user; encrypted at rest when FileVault is on) instead of the Keychain. A self-built app has no Apple
 /// team ID, so the Keychain ties access to each exact build and asks for your password after every rebuild.
 enum Secrets {
@@ -10,7 +9,7 @@ enum Secrets {
 
     private static var fileURL: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Aerogel", isDirectory: true)
+            .appendingPathComponent("Slack Glass", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("secrets.json")
     }
@@ -30,15 +29,9 @@ enum Secrets {
 
     private static func load() -> [String: String] {
         if let cache { return cache }
-        if let data = try? Data(contentsOf: fileURL),
-           let d = try? JSONDecoder().decode([String: String].self, from: data) {
-            cache = d
-            return d
-        }
-        // First run on this version: bring over what older versions kept in the Keychain (asks one last time).
-        let migrated = LegacyKeychain.readAll(TokenKey.all)
-        save(migrated)
-        return migrated
+        let d = (try? Data(contentsOf: fileURL)).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
+        cache = d
+        return d
     }
 
     private static func save(_ d: [String: String]) {
@@ -51,28 +44,6 @@ enum Secrets {
         else { return }
         if rename(tmp.path, url.path) != 0 { try? FileManager.default.removeItem(at: tmp) }
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-    }
-}
-
-/// Read-only access to where versions before 0.2 stored tokens, for the one-time move to `Secrets`.
-private enum LegacyKeychain {
-    static func readAll(_ accounts: [String]) -> [String: String] {
-        var out: [String: String] = [:]
-        for account in accounts {
-            let q: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: "com.aerogel.hud",
-                kSecAttrAccount as String: account,
-                kSecReturnData as String: true,
-                kSecMatchLimit as String: kSecMatchLimitOne,
-            ]
-            var item: AnyObject?
-            if SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess,
-               let d = item as? Data, let v = String(data: d, encoding: .utf8), !v.isEmpty {
-                out[account] = v
-            }
-        }
-        return out
     }
 }
 
@@ -177,12 +148,12 @@ struct PersistedState: Codable {
     var assistantChats: [String: String]? = [:]
 }
 
-/// Slash commands are just files: `~/Library/Application Support/Aerogel/Commands/silence.mp4`
+/// Slash commands are just files: `~/Library/Application Support/Slack Glass/Commands/silence.mp4`
 /// makes `/silence` upload that video. `.txt`/`.md` files send their text instead.
 enum SlashCommands {
     static var folder: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Aerogel/Commands", isDirectory: true)
+            .appendingPathComponent("Slack Glass/Commands", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -192,7 +163,7 @@ enum SlashCommands {
         let url: URL
         var id: String { name }
         var isText: Bool { ["txt", "md"].contains(url.pathExtension.lowercased()) }
-        var isBuiltin: Bool { url.scheme == "aerogel" }
+        var isBuiltin: Bool { url.scheme == "slackglass" }
         var isVideo: Bool { ["mp4", "mov", "m4v", "webm"].contains(url.pathExtension.lowercased()) }
     }
 
@@ -219,7 +190,7 @@ enum SlashCommands {
     /// `/assistant` (or `/jar`…) is built in: it asks Assistant instead of sending a file.
     static func isAssistant(_ name: String) -> Bool { name.count >= 3 && Prefs.assistantCommand.hasPrefix(name) }
 
-    static var assistant: Command { Command(name: Prefs.assistantCommand, url: URL(string: "aerogel://assistant")!) }
+    static var assistant: Command { Command(name: Prefs.assistantCommand, url: URL(string: "slackglass://assistant")!) }
 
     static func matching(_ text: String) -> [Command] {
         guard text.hasPrefix("/"), !text.contains(where: \.isWhitespace) else { return [] }
@@ -231,7 +202,7 @@ enum SlashCommands {
 enum Persistence {
     private static var url: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Aerogel", isDirectory: true)
+            .appendingPathComponent("Slack Glass", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("state.json")
     }

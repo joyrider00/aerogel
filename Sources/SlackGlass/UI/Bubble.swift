@@ -149,7 +149,7 @@ private struct BubbleView: View {
         .onHover { hover = $0 }
         .frame(width: BubbleController.size, height: BubbleController.size)
         .environment(\.colorScheme, .dark)
-        .help("Aerogel: click to open, drag to move")
+        .help("Slack Glass: click to open, drag to move")
         .onChange(of: model.unseenCount) { n in
             guard n > 0 else { return }
             bump = true

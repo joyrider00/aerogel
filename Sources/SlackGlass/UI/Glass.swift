@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The aerogel look. On macOS 26 (when built with the macOS 26 SDK) this is Apple's
+/// The frosted-glass look. On macOS 26 (when built with the macOS 26 SDK) this is Apple's
 /// real Liquid Glass. Everywhere else it's a behind-window blur with a specular rim,
 /// a soft top-left highlight and an inner glow — light, cold and see-through.
 struct GlassBackground: View {
@@ -23,7 +23,7 @@ struct GlassBackground: View {
 
     private var legacy: some View {
         ZStack {
-            // Partially transparent blur: the desktop reads through, like aerogel.
+            // Partially transparent blur: the desktop reads through, like frosted glass.
             VisualEffectBlur(material: .hudWindow, blending: .behindWindow).opacity(0.82)
             Color.black.opacity(0.08 + tint)
             LinearGradient(colors: [.white.opacity(0.20), .white.opacity(0.04), .white.opacity(0.10)],
