@@ -245,7 +245,7 @@ private struct VideoView: NSViewRepresentable {
 }
 
 /// NSImageView so GIFs play; scales to fit, never past the frame.
-private struct AnimatedImage: NSViewRepresentable {
+struct AnimatedImage: NSViewRepresentable {
     let image: NSImage
 
     func makeNSView(context: Context) -> NSImageView {

@@ -61,6 +61,26 @@ final class ImageCache {
     }
 }
 
+/// Like RemoteImage, but GIFs play. Scales to fit its frame.
+struct AnimatedRemoteImage: View {
+    let url: URL?
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                AnimatedImage(image: image)
+            } else {
+                Rectangle().fill(.white.opacity(0.08)).overlay(ProgressView().controlSize(.small))
+            }
+        }
+        .task(id: url) {
+            guard let url else { return }
+            image = await ImageCache.shared.image(for: url)
+        }
+    }
+}
+
 struct RemoteImage<Placeholder: View>: View {
     let url: URL?
     var contentMode: ContentMode = .fill

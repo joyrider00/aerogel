@@ -151,6 +151,9 @@ struct MessageRow: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                ForEach((message.blocks ?? []).filter(\.isImage), id: \.self) { b in
+                    BlockImageView(block: b)
+                }
                 ForEach(message.attachments ?? [], id: \.self) { a in
                     AttachmentView(attachment: a)
                 }
@@ -341,8 +344,14 @@ struct FileView: View {
     var body: some View {
         Group {
             if file.isImage {
-                RemoteImage(url: file.thumbURL, contentMode: .fill) {
-                    Rectangle().fill(.white.opacity(0.08)).overlay(ProgressView().controlSize(.small))
+                Group {
+                    if let gif = file.animatedThumbURL {
+                        AnimatedRemoteImage(url: gif)
+                    } else {
+                        RemoteImage(url: file.thumbURL, contentMode: .fill) {
+                            Rectangle().fill(.white.opacity(0.08)).overlay(ProgressView().controlSize(.small))
+                        }
+                    }
                 }
                 .frame(width: 220, height: 140)
                 .overlay {
@@ -374,11 +383,35 @@ struct FileView: View {
     }
 }
 
+/// A GIF (from Slack's GIF picker) or other image block, playing, at its own size.
+struct BlockImageView: View {
+    let block: SlackMessage.ImageBlock
+
+    var body: some View {
+        let size = block.displaySize
+        AnimatedRemoteImage(url: block.url)
+            .frame(width: size.width, height: size.height)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .help(block.alt_text ?? "")
+    }
+}
+
 struct AttachmentView: View {
     @EnvironmentObject var model: AppModel
     let attachment: SlackMessage.Attachment
 
     var body: some View {
+        let images = attachment.images
+        if !images.isEmpty, attachment.title == nil, attachment.text == nil, attachment.pretext == nil {
+            // Just a GIF: show it, not the "shared a GIF" placeholder text.
+            ForEach(images, id: \.self) { BlockImageView(block: $0) }
+        } else {
+            card
+            ForEach(images, id: \.self) { BlockImageView(block: $0) }
+        }
+    }
+
+    private var card: some View {
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 2).fill(.white.opacity(0.3)).frame(width: 3)
             VStack(alignment: .leading, spacing: 2) {

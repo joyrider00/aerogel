@@ -58,6 +58,9 @@ struct SlackFile: Codable, Hashable, Identifiable {
     var thumb_360: String?
     var thumb_480: String?
     var thumb_video: String?
+    /// Animated thumbnails Slack makes for uploaded GIFs (the plain thumbs are still frames).
+    var thumb_360_gif: String?
+    var thumb_480_gif: String?
     /// A playable MP4 Slack makes for some uploads (e.g. .mov files).
     var mp4: String?
     var permalink: String?
@@ -67,6 +70,7 @@ struct SlackFile: Codable, Hashable, Identifiable {
     var isPDF: Bool { filetype == "pdf" || mimetype == "application/pdf" }
     var isImage: Bool { ((mimetype ?? "").hasPrefix("image/") || isVideo) && thumbURL != nil }
     var thumbURL: URL? { (thumb_video ?? thumb_480 ?? thumb_360).flatMap(URL.init(string:)) }
+    var animatedThumbURL: URL? { (thumb_480_gif ?? thumb_360_gif).flatMap(URL.init(string:)) }
     var displayName: String { title ?? name ?? "file" }
 }
 
@@ -92,6 +96,7 @@ struct SlackMessage: Codable, Hashable, Identifiable {
     var edited: Edited?
     var bot_profile: BotProfile?
     var attachments: [Attachment]?
+    var blocks: [ImageBlock]?
 
     struct Edited: Codable, Hashable { var user: String?; var ts: String? }
     struct BotProfile: Codable, Hashable { var name: String?; var icons: [String: String]? }
@@ -102,6 +107,61 @@ struct SlackMessage: Codable, Hashable, Identifiable {
         var title_link: String?
         var text: String?
         var footer: String?
+        var image_url: String?
+        var image_width: Double?
+        var image_height: Double?
+        var blocks: [ImageBlock]?
+
+        /// GIFs from Slack's GIF picker and link-preview images.
+        var images: [ImageBlock] {
+            var out = (blocks ?? []).filter(\.isImage)
+            if let u = image_url {
+                out.append(ImageBlock(type: "image", image_url: u, alt_text: title ?? fallback,
+                                      image_width: image_width, image_height: image_height))
+            }
+            return out
+        }
+    }
+
+    /// Any Block Kit block; only image blocks are drawn. Decoding never fails, whatever the block holds.
+    struct ImageBlock: Codable, Hashable {
+        var type: String?
+        var image_url: String?
+        var alt_text: String?
+        var image_width: Double?
+        var image_height: Double?
+
+        init(type: String?, image_url: String?, alt_text: String?, image_width: Double?, image_height: Double?) {
+            self.type = type; self.image_url = image_url; self.alt_text = alt_text
+            self.image_width = image_width; self.image_height = image_height
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            type = try? c.decode(String.self, forKey: .type)
+            image_url = try? c.decode(String.self, forKey: .image_url)
+            alt_text = try? c.decode(String.self, forKey: .alt_text)
+            image_width = try? c.decode(Double.self, forKey: .image_width)
+            image_height = try? c.decode(Double.self, forKey: .image_height)
+        }
+
+        var isImage: Bool { type == "image" && url != nil }
+
+        /// Giphy's .webp doesn't animate in AppKit; the same GIF is also served as .gif.
+        var url: URL? {
+            guard var s = image_url else { return nil }
+            if let u = URL(string: s), u.host?.hasSuffix("giphy.com") == true, u.path.hasSuffix(".webp") {
+                s = s.replacingOccurrences(of: u.path, with: String(u.path.dropLast(5)) + ".gif")
+            }
+            return URL(string: s)
+        }
+
+        /// Shown at its own size, fitted inside the message column.
+        var displaySize: CGSize {
+            let w = image_width ?? 260, h = image_height ?? 180
+            let scale = min(1, 300 / max(w, 1), 220 / max(h, 1))
+            return CGSize(width: max(40, w * scale), height: max(30, h * scale))
+        }
     }
 
     var id: String { ts }
