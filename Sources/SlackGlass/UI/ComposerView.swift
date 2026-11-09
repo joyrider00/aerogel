@@ -114,7 +114,14 @@ struct ComposerView: View {
                         .frame(height: height)
                 }
                 .padding(.vertical, 3)
-                IconButton(symbol: "face.smiling", help: "Emoji") { emojiPicker = true }
+                Button { emojiPicker = true } label: {
+                    OutlineEmojiIcon()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Emoji")
                     .popover(isPresented: $emojiPicker, arrowEdge: .top) {
                         ReactionPicker { name in
                             emojiPicker = false
@@ -136,6 +143,7 @@ struct ComposerView: View {
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .fixedSize()
+                    .padding(.bottom, 5) // the menu sits low; line it up with the other buttons
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty)
                     .help("Schedule send")
                     .popover(isPresented: $customSchedule, arrowEdge: .top) {
@@ -497,5 +505,26 @@ private struct MentionPopup: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(selected ? 0.14 : 0)))
         .contentShape(Rectangle())
         .onTapGesture { onPick(s) }
+    }
+}
+
+/// A thin outline face, drawn to match the clock icon beside it (SF Symbols' faces render solid at this size).
+struct OutlineEmojiIcon: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let d: CGFloat = 12.5
+            let r = CGRect(x: (size.width - d) / 2, y: (size.height - d) / 2, width: d, height: d)
+            let style = StrokeStyle(lineWidth: 1.3, lineCap: .round)
+            ctx.stroke(Path(ellipseIn: r.insetBy(dx: 0.65, dy: 0.65)), with: .foreground, style: style)
+            let eye: CGFloat = 1.7
+            for dx in [-2.4, 2.4] as [CGFloat] {
+                ctx.fill(Path(ellipseIn: CGRect(x: r.midX + dx - eye / 2, y: r.midY - 2.3 - eye / 2, width: eye, height: eye)),
+                         with: .foreground)
+            }
+            var smile = Path()
+            smile.addArc(center: CGPoint(x: r.midX, y: r.midY + 0.2), radius: 3.3,
+                         startAngle: .degrees(30), endAngle: .degrees(150), clockwise: false)
+            ctx.stroke(smile, with: .foreground, style: style)
+        }
     }
 }
