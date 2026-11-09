@@ -13,6 +13,7 @@ struct ComposerView: View {
     @State private var sending = false
     @State private var draftRef: ConversationRef?
     @State private var customSchedule = false
+    @State private var emojiPicker = false
     @State private var customDate = Date().addingTimeInterval(3600)
     @State private var caret = 0
     @State private var caretTarget: Int?
@@ -113,6 +114,13 @@ struct ComposerView: View {
                         .frame(height: height)
                 }
                 .padding(.vertical, 3)
+                IconButton(symbol: "face.smiling", help: "Emoji") { emojiPicker = true }
+                    .popover(isPresented: $emojiPicker, arrowEdge: .top) {
+                        ReactionPicker { name in
+                            emojiPicker = false
+                            insertEmoji(name)
+                        }
+                    }
                 if model.editing == nil {
                     Menu {
                         ForEach(AppModel.snoozeOptions().dropFirst(), id: \.label) { o in
@@ -270,6 +278,16 @@ struct ComposerView: View {
         setText((text as NSString).replacingCharacters(in: m.range, with: ins))
         caretTarget = m.range.location + (ins as NSString).length
         mentionIndex = 0
+    }
+
+    /// Puts the emoji where the caret is (the character itself; workspace emoji as :name:).
+    private func insertEmoji(_ name: String) {
+        let ins = Emoji.unicode(name) ?? ":\(name):"
+        let ns = text as NSString
+        let at = min(caret, ns.length)
+        setText(ns.replacingCharacters(in: NSRange(location: at, length: 0), with: ins))
+        caretTarget = at + (ins as NSString).length
+        model.focusComposerTick += 1
     }
 
     private func setText(_ t: String) {
