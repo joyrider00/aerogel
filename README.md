@@ -71,6 +71,8 @@ Slack Glass talks to Slack through a small private Slack app that **you** create
 5. Click **Save & Connect**. The status should change to **Connected**.
 6. **Turn off Slack's own desktop notifications** (Slack → Settings → Notifications) so you don't get every message twice.
 
+**Already set up on another Mac?** You don't have to create the app again. On the Mac that's connected, open Settings and click **Copy link code**. On the new Mac, paste the code into **Already using Slack Glass on another Mac?** and click **Link this Mac**. The code contains your tokens, so move it privately, for example with AirDrop, not over Slack. Linked Macs share one Slack app, and Slack delivers each new message to only one connection. If both Macs run at the same time, each gets only some of the notifications. To get every notification on both, create a separate app on the second Mac. If your tokens rotate (`xoxe.`), only one linked Mac stays signed in.
+
 **Why does everyone create their own app?** Slack delivers messages over a live connection to whoever holds the app-level token. With one shared app, everyone's DMs would flow through the same connection. With one app per person, your messages go only to your Mac. Single-workspace apps also avoid the strict rate limits Slack places on apps that aren't in its Marketplace.
 
 **Can't install apps?** Some workspaces need an admin to approve new apps. If yours does, the install step will say so, and you can request approval from there.

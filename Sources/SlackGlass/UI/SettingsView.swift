@@ -22,12 +22,17 @@ struct SettingsView: View {
     @State private var assistantToken = Secrets.get(TokenKey.assistant) ?? ""
     @State private var assistantStatus: String?
     @State private var assistantOK = false
+    @State private var hasSetup = !(Secrets.get(TokenKey.user) ?? "").isEmpty && !(Secrets.get(TokenKey.app) ?? "").isEmpty
+    @State private var linkCode = ""
+    @State private var linkError: String?
+    @State private var copiedLink = false
 
     var body: some View {
         Form {
             Section {
                 Text("Slack Glass talks to Slack through a private app that only you install, in your own workspace. Setup takes about a minute.")
                     .font(.callout).foregroundStyle(.secondary)
+                if !hasSetup { linkThisMac }
                 step(1, "Create the app from Slack Glass's manifest") {
                     Button("Create Slack app ↗") { NSWorkspace.shared.open(SlackManifest.createAppURL) }
                 }
@@ -63,6 +68,7 @@ struct SettingsView: View {
                         Secrets.set(TokenKey.appRefresh, trim(appRefresh))
                         Secrets.set(TokenKey.clientID, trim(clientID))
                         Secrets.set(TokenKey.clientSecret, trim(clientSecret))
+                        hasSetup = !cleanUser.isEmpty && !cleanApp.isEmpty
                         model.connect()
                     }
                     .keyboardShortcut(.defaultAction)
@@ -71,6 +77,7 @@ struct SettingsView: View {
                     Spacer()
                     Button("Try demo") { model.startDemo() }
                 }
+                if hasSetup { setUpAnotherMac }
             } header: { Text("Connect Slack") }
 
             Section {
@@ -147,6 +154,7 @@ struct SettingsView: View {
                                   TokenKey.clientID, TokenKey.clientSecret] { Secrets.set(k, nil) }
                         userToken = ""
                         appToken = ""
+                        hasSetup = false
                         model.disconnect()
                     }
                     Spacer()
@@ -156,6 +164,67 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 580, height: 720)
+    }
+
+    /// Shown before setup: reuse the Slack app from another Mac instead of creating a new one.
+    private var linkThisMac: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("**Already using Slack Glass on another Mac?** On that Mac, open Settings and click **Copy link code**, then paste it here. Otherwise, follow the steps below.")
+                .font(.callout)
+            HStack {
+                SecureField("sglink1.…", text: $linkCode).textFieldStyle(.roundedBorder)
+                    .onSubmit(linkMac)
+                Button("Link this Mac", action: linkMac).disabled(!LinkCode.looksLike(linkCode))
+            }
+            if let linkError {
+                Label(linkError, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange)
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.08)))
+    }
+
+    /// Shown once this Mac is set up: hand the setup to another Mac.
+    private var setUpAnotherMac: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("**Set up another Mac**")
+                Spacer()
+                Button(copiedLink ? "Copied ✓" : "Copy link code") {
+                    guard let code = LinkCode.export() else { return }
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(code, forType: .string)
+                    copiedLink = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copiedLink = false }
+                }
+            }
+            Text("Paste the code into Slack Glass's Settings on the other Mac to use this same Slack app there. It contains your Slack tokens, so move it privately (AirDrop, Notes, a password manager), not over Slack.")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("Linked Macs share one connection to Slack, and Slack delivers each new message to only one of them. If both Macs run at the same time, each one gets only some of the notifications. To get every notification on both, create a separate Slack app on the second Mac instead.")
+                .font(.caption).foregroundStyle(.secondary)
+            if LinkCode.setupRotates {
+                Text("Your workspace's tokens expire and renew, and each renewal cancels the previous one. Only one linked Mac stays signed in; the other asks for a new link code.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func linkMac() {
+        guard LinkCode.apply(linkCode) else {
+            linkError = "That isn't a complete link code. Copy it again on the other Mac."
+            return
+        }
+        userToken = Secrets.get(TokenKey.user) ?? ""
+        appToken = Secrets.get(TokenKey.app) ?? ""
+        userRefresh = Secrets.get(TokenKey.userRefresh) ?? ""
+        appRefresh = Secrets.get(TokenKey.appRefresh) ?? ""
+        clientID = Secrets.get(TokenKey.clientID) ?? ""
+        clientSecret = Secrets.get(TokenKey.clientSecret) ?? ""
+        assistantToken = Secrets.get(TokenKey.assistant) ?? ""
+        linkCode = ""
+        linkError = nil
+        hasSetup = true
+        model.connect()
     }
 
     private func saveAssistant() {
