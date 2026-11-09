@@ -50,6 +50,10 @@ echo "Built $APP"
 
 case "${1:-}" in
   --install)
+    # Quit the running copy, or macOS keeps the old version running and just brings it forward.
+    osascript -e "quit app \"$NAME\"" >/dev/null 2>&1 || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -xq "$EXE" || break; sleep 0.3; done
+    pkill -x "$EXE" 2>/dev/null || true
     rm -rf "/Applications/$NAME.app"
     cp -R "$APP" /Applications/
     echo "Installed to /Applications/$NAME.app"

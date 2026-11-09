@@ -250,6 +250,13 @@ final class AppModel: ObservableObject {
         conversations[channel]?.isDirect ?? channel.hasPrefix("D")
     }
 
+    private func mpimHandles(_ name: String) -> [String] {
+        var n = name
+        if n.hasPrefix("mpdm-") { n.removeFirst(5) }
+        if let r = n.range(of: #"-\d+$"#, options: .regularExpression) { n.removeSubrange(r) }
+        return n.components(separatedBy: "--").filter { $0 != users[meID]?.name }
+    }
+
     private func mpimTitle(_ name: String) -> String {
         var n = name
         if n.hasPrefix("mpdm-") { n.removeFirst(5) }
@@ -871,39 +878,50 @@ final class AppModel: ObservableObject {
 
     var switcherResults: [SwitchTarget] { results(for: switcherQuery) }
 
+    /// Matching conversations, most recently active first (like Slack's switcher), then people you could start
+    /// a DM with. Group DMs match on any member's name or handle.
     func results(for query: String, limit: Int = 8) -> [SwitchTarget] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
             .trimmingCharacters(in: CharacterSet(charactersIn: "#@"))
-        var out: [(Int, SwitchTarget)] = []
+        let words = q.split(separator: " ").map(String.init)
 
-        func score(_ s: String) -> Int? {
-            let l = s.lowercased()
-            if q.isEmpty { return 1 }
-            if l.hasPrefix(q) { return 3 }
-            if l.contains(q) { return 2 }
-            return nil
+        /// Every word must match the start of some word in one of the names.
+        func matches(_ names: [String]) -> Bool {
+            guard !words.isEmpty else { return true }
+            let parts = names.flatMap { $0.lowercased().split(whereSeparator: { " ,._-".contains($0) }).map(String.init) }
+                + names.map { $0.lowercased() }
+            return words.allSatisfy { w in parts.contains { $0.hasPrefix(w) } }
         }
 
+        var convs: [(activity: Double, target: SwitchTarget)] = []
         var dmUsers = Set<String>()
         for c in conversations.values where c.is_archived != true {
+            let activity = lastActivity[c.id] ?? c.estimatedActivity ?? 0
             if c.is_im == true, let u = c.user {
                 dmUsers.insert(u)
-                guard users[u]?.deleted != true, let s = score(userName(u)) else { continue }
-                out.append((s + 1, SwitchTarget(kind: .conversation(c.id), title: userName(u), subtitle: "Direct message")))
+                guard users[u]?.deleted != true else { continue }
+                let user = users[u]
+                guard matches([userName(u), user?.name ?? "", user?.real_name ?? ""]) else { continue }
+                convs.append((activity, SwitchTarget(kind: .conversation(c.id), title: userName(u), subtitle: "Direct message")))
             } else {
                 let t = title(c.id)
-                guard let s = score(t.trimmingCharacters(in: CharacterSet(charactersIn: "#"))) else { continue }
-                out.append((s, SwitchTarget(kind: .conversation(c.id), title: t,
-                                            subtitle: c.is_mpim == true ? "Group DM" : (c.is_private == true ? "Private channel" : "Channel"))))
+                var names = [t.trimmingCharacters(in: CharacterSet(charactersIn: "#"))]
+                if c.is_mpim == true { names += mpimHandles(c.name ?? "") }
+                guard matches(names) else { continue }
+                convs.append((activity, SwitchTarget(kind: .conversation(c.id), title: t,
+                                                     subtitle: c.is_mpim == true ? "Group DM" : (c.is_private == true ? "Private channel" : "Channel"))))
             }
         }
+        var out = convs.sorted { $0.activity != $1.activity ? $0.activity > $1.activity : $0.target.title < $1.target.title }
+            .map(\.target)
         if !q.isEmpty {
-            for u in users.values where u.deleted != true && u.is_bot != true && u.id != meID && !dmUsers.contains(u.id) {
-                guard let s = score(u.displayName) ?? score(u.name ?? "") else { continue }
-                out.append((s, SwitchTarget(kind: .user(u.id), title: u.displayName, subtitle: "Start a DM")))
-            }
+            out += users.values
+                .filter { $0.deleted != true && $0.is_bot != true && $0.id != meID && !dmUsers.contains($0.id)
+                    && matches([$0.displayName, $0.name ?? "", $0.real_name ?? ""]) }
+                .sorted { $0.displayName < $1.displayName }
+                .map { SwitchTarget(kind: .user($0.id), title: $0.displayName, subtitle: "Start a DM") }
         }
-        return out.sorted { $0.0 != $1.0 ? $0.0 > $1.0 : $0.1.title < $1.1.title }.prefix(limit).map(\.1)
+        return Array(out.prefix(limit))
     }
 
     func openSwitcherTarget(_ t: SwitchTarget) {
