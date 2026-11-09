@@ -115,10 +115,6 @@ struct InboxView: View {
                     .background(Capsule().fill(.purple.opacity(0.5)))
             }
             Spacer()
-            IconButton(symbol: "magnifyingglass", help: "Jump to… (⌘K)") {
-                model.switcherOpen.toggle()
-                model.switcherQuery = ""
-            }
             IconButton(symbol: model.pinned ? "pin.fill" : "pin", help: "Keep open when clicking elsewhere") {
                 model.pinned.toggle()
             }
@@ -141,9 +137,10 @@ struct InboxView: View {
     private func tab(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 10.5, weight: .semibold)).tracking(0.8)
+                .font(.system(size: 10.5, weight: .semibold)).tracking(0.5)
+                .lineLimit(1).fixedSize()
                 .foregroundStyle(selected ? .primary : .secondary)
-                .padding(.horizontal, 7).padding(.vertical, 3)
+                .padding(.horizontal, 6).padding(.vertical, 3)
                 .background(Capsule().fill(.white.opacity(selected ? 0.16 : 0)))
                 .contentShape(Capsule())
         }

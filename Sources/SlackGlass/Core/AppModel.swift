@@ -912,16 +912,33 @@ final class AppModel: ObservableObject {
                                                      subtitle: c.is_mpim == true ? "Group DM" : (c.is_private == true ? "Private channel" : "Channel"))))
             }
         }
-        var out = convs.sorted { $0.activity != $1.activity ? $0.activity > $1.activity : $0.target.title < $1.target.title }
-            .map(\.target)
-        if !q.isEmpty {
-            out += users.values
-                .filter { $0.deleted != true && $0.is_bot != true && $0.id != meID && !dmUsers.contains($0.id)
-                    && matches([$0.displayName, $0.name ?? "", $0.real_name ?? ""]) }
-                .sorted { $0.displayName < $1.displayName }
-                .map { SwitchTarget(kind: .user($0.id), title: $0.displayName, subtitle: "Start a DM") }
+        let byRecent = convs.sorted {
+            $0.activity != $1.activity ? $0.activity > $1.activity : $0.target.title < $1.target.title
         }
-        return Array(out.prefix(limit))
+        guard !q.isEmpty else { return Array(byRecent.map(\.target).prefix(limit)) }
+
+        // A typed name first offers a 1:1 chat with that person (their DM, or a new one), then every
+        // conversation they're in, most recent first.
+        let dmFor = Dictionary(conversations.values.compactMap { c in c.is_im == true ? c.user.map { ($0, c.id) } : nil },
+                               uniquingKeysWith: { a, _ in a })
+        let people = users.values
+            .filter { $0.deleted != true && $0.is_bot != true && $0.id != meID
+                && matches([$0.displayName, $0.name ?? "", $0.real_name ?? ""]) }
+            .sorted {
+                let a = dmFor[$0.id].flatMap { lastActivity[$0] } ?? 0, b = dmFor[$1.id].flatMap { lastActivity[$0] } ?? 0
+                return a != b ? a > b : $0.displayName < $1.displayName
+            }
+            .prefix(3)
+        let chats = people.map { u in
+            dmFor[u.id].map { SwitchTarget(kind: .conversation($0), title: u.displayName, subtitle: "Direct message") }
+                ?? SwitchTarget(kind: .user(u.id), title: u.displayName, subtitle: "New chat")
+        }
+        let shownDMs = Set(people.compactMap { dmFor[$0.id] })
+        let rest = byRecent.map(\.target).filter {
+            if case .conversation(let id) = $0.kind { return !shownDMs.contains(id) }
+            return true
+        }
+        return Array((chats + rest).prefix(limit))
     }
 
     func openSwitcherTarget(_ t: SwitchTarget) {
