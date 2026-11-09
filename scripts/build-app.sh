@@ -13,12 +13,22 @@ APP="build/$NAME.app"
 VERSION=${VERSION:-0.1.0}
 
 ARCHS=(--arch arm64 --arch x86_64)
-if ! swift build -c release "${ARCHS[@]}" >/dev/null 2>&1; then
-  echo "Universal build unavailable (needs full Xcode); building for this Mac only."
-  ARCHS=()
+if swift build -c release "${ARCHS[@]}" >/dev/null 2>&1; then
+  BIN=$(swift build -c release "${ARCHS[@]}" --show-bin-path)/$EXE
+else
+  # Multi-arch builds need full Xcode. Without it, build each architecture on its own and join them.
+  BIN=build/$EXE.universal
+  mkdir -p build
+  PARTS=()
+  for T in arm64-apple-macosx13.0 x86_64-apple-macosx13.0; do
+    if swift build -c release --triple "$T"; then
+      PARTS+=("$(swift build -c release --triple "$T" --show-bin-path)/$EXE")
+    fi
+  done
+  [ ${#PARTS[@]} -gt 0 ] || { echo "Build failed."; exit 1; }
+  [ ${#PARTS[@]} -eq 2 ] || echo "Couldn't build both architectures; this build runs on this kind of Mac only."
+  lipo -create "${PARTS[@]}" -output "$BIN"
 fi
-swift build -c release ${ARCHS[@]+"${ARCHS[@]}"}
-BIN=$(swift build -c release ${ARCHS[@]+"${ARCHS[@]}"} --show-bin-path)/$EXE
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
