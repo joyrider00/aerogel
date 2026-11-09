@@ -5,14 +5,20 @@ import UniformTypeIdentifiers
 /// that's deleted once the drag ends, and some apps send a file promise or raw image data instead of a file,
 /// so everything is copied into Slack Glass's own temp folder right away.
 enum DropReader {
+    /// Everything a file or image drag can arrive as, including the older formats the screenshot thumbnail and
+    /// Finder still use. (Missing those meant drops only worked over the reply box, which accepts them itself.)
     static var types: [NSPasteboard.PasteboardType] {
-        [.fileURL, .png, .tiff] + NSFilePromiseReceiver.readableDraggedTypes.map { NSPasteboard.PasteboardType($0) }
+        var t: [NSPasteboard.PasteboardType] = [.fileURL, .URL, .png, .tiff, .pdf,
+                                                NSPasteboard.PasteboardType("NSFilenamesPboardType")]
+        t += NSImage.imageTypes.map { NSPasteboard.PasteboardType($0) }
+        t += NSFilePromiseReceiver.readableDraggedTypes.map { NSPasteboard.PasteboardType($0) }
+        return Array(Set(t))
     }
 
     static func canRead(_ pb: NSPasteboard) -> Bool {
         pb.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
             || pb.canReadObject(forClasses: [NSFilePromiseReceiver.self], options: nil)
-            || pb.availableType(from: [.png, .tiff]) != nil
+            || NSImage.canInit(with: pb)
     }
 
     private static func stash() -> URL {
