@@ -172,8 +172,11 @@ final class ImageViewer: ObservableObject {
         }
     }
 
+    /// Set by the model so this opens the Slack app directly (slack://), not a browser tab.
+    var openInSlackHandler: ((SlackFile) -> Void)?
+
     func openInSlack() {
-        if let p = file?.permalink.flatMap(URL.init(string:)) { NSWorkspace.shared.open(p) }
+        if let f = file { openInSlackHandler?(f) }
         close()
     }
 }

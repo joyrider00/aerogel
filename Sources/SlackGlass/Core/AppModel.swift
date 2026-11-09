@@ -850,13 +850,26 @@ final class AppModel: ObservableObject {
         if let u = URL(string: s) { NSWorkspace.shared.open(u) }
     }
 
-    /// Images and videos open in Slack Glass's viewer; other files open in Slack.
+    /// Images and videos open in Slack Glass's viewer; other files open in the Slack app.
     func openFile(_ f: SlackFile) {
         if f.isImage || f.isVideo {
+            ImageViewer.shared.openInSlackHandler = { [weak self] f in self?.openFileInSlack(f.id) }
             ImageViewer.shared.show(f)
-        } else if let p = f.permalink.flatMap(URL.init(string:)) {
-            NSWorkspace.shared.open(p)
+        } else {
+            openFileInSlack(f.id)
         }
+    }
+
+    /// Straight into the Slack app (slack://), never a browser tab that then redirects.
+    func openFileInSlack(_ fileID: String) {
+        if let u = URL(string: "slack://file?team=\(teamID)&id=\(fileID)") { NSWorkspace.shared.open(u) }
+    }
+
+    /// For links that aren't in message text (attachment titles): Slack links go to the app, others to the browser.
+    func openExternal(_ url: URL) {
+        guard ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") else { return }
+        let host = url.host?.lowercased() ?? ""
+        if host == "slack.com" || host.hasSuffix(".slack.com") { _ = handleLink(url) } else { NSWorkspace.shared.open(url) }
     }
 
     /// Turns "@maya" into "<@U123>" for known users so mentions actually ping.
@@ -1206,6 +1219,14 @@ extension AppModel {
             }
         } else if let i = parts.firstIndex(of: "client"), parts.count > i + 2 {
             channel = parts[i + 2]
+        }
+        // File links: …/files/U123/F456/name, or files.slack.com/files-pri/T123-F456/name.
+        if channel == nil, let fileID = parts.first(where: { p in
+            (p.hasPrefix("F") && p.count >= 9 && p.allSatisfy { $0.isUppercase || $0.isNumber })
+        }) ?? parts.first(where: { $0.range(of: #"^T[A-Z0-9]+-F[A-Z0-9]+$"#, options: .regularExpression) != nil })
+            .map({ String($0.split(separator: "-")[1]) }) {
+            openFileInSlack(fileID)
+            return .handled
         }
         guard let channel else {
             // Not a conversation link (e.g. a file or settings page). Hand it to the app anyway.

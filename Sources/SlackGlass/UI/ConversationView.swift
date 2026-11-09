@@ -381,7 +381,7 @@ struct AttachmentView: View {
                 if let t = attachment.title {
                     Text(t).font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(attachment.title_link != nil ? Mrkdwn.linkColor : .primary)
-                        .onTapGesture { if let u = attachment.title_link.flatMap(URL.init(string:)) { NSWorkspace.shared.open(u) } }
+                        .onTapGesture { if let u = attachment.title_link.flatMap(URL.init(string:)) { model.openExternal(u) } }
                 }
                 if let t = attachment.text { Text(model.render(t)).font(.system(size: 12)).lineLimit(6) }
                 if attachment.title == nil, attachment.text == nil, let f = attachment.fallback {
