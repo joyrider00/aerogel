@@ -23,7 +23,7 @@ Slack Glass is a small macOS menu-bar app built on Slack's public API. It's free
 ## What you get
 
 - **Toasts that open in place.** Click a toast and the thread or DM opens in a floating panel with its full history. You can also reply straight from the toast.
-- **A "Needs you" inbox.** DMs, group DMs, @mentions, your keywords, and new replies in threads you've posted in, grouped by thread. Opening an item clears it, and so does replying from anywhere, including Slack itself.
+- **An Activity inbox.** DMs, group DMs, @mentions, your keywords, and new replies in threads you've posted in, grouped by thread. Opening an item clears it, and so does replying from anywhere, including Slack itself.
 - **Chats.** Browse and search every channel and DM, and use the arrow keys to move through the results. When nothing needs you, this is what you see.
 - **Search.** Search every message you can see in Slack, using Slack's own modifiers (`from:@maya`, `in:#eng`, `has:link`). Open a result and it jumps to that message in its thread or channel.
 - **Reply like Slack.** Enter sends, Shift-Enter adds a new line, and `@name` mentions resolve. "Also send to #channel" works too. You can attach files by pasting, by dragging them (screenshots included), or with the paperclip.
@@ -83,7 +83,7 @@ Slack Glass talks to Slack through a small private Slack app that **you** create
 - **The menu-bar icon** does the same: left-click to open, right-click for Settings and Quit.
 - **Toasts** appear when something needs you. Click one to open the thread, type in its reply box to answer without opening anything, or let it fade after 8 seconds.
 - **The panel** has three tabs:
-  - **Needs you:** the inbox described above.
+  - **Activity:** the inbox described above.
   - **Chats:** every channel and DM. Start typing to search, use ↑↓ to pick one, and press Enter to open it.
   - **Search:** messages across Slack (see [Searching](#searching)).
 - **Opening a conversation** shows it to the left of the inbox. ⌘[ goes back, and Esc closes one layer at a time.

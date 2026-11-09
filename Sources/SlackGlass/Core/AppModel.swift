@@ -554,7 +554,7 @@ final class AppModel: ObservableObject {
         if recents.count > 20 { recents.removeLast() }
         persist()
         switcherOpen = false
-        // Opening it is handling it: it leaves Needs You. ⌥↓ continues from where it was.
+        // Opening it is handling it: it leaves Activity. ⌥↓ continues from where it was.
         if let i = inbox.firstIndex(where: { $0.ref == ref }) {
             selectedInboxID = inbox[i].id
             removedInboxIndex = i

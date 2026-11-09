@@ -99,7 +99,7 @@ struct InboxView: View {
     private var header: some View {
         HStack(spacing: 4) {
             Circle().fill(statusColor).frame(width: 7, height: 7).help(statusHelp)
-            tab("NEEDS YOU" + (model.inbox.isEmpty ? "" : " \(model.inbox.count)"),
+            tab("ACTIVITY" + (model.inbox.isEmpty ? "" : " \(model.inbox.count)"),
                 selected: !model.showChats && !model.showSearch) {
                 model.showChats = false
                 model.showSearch = false
@@ -165,7 +165,7 @@ struct InboxView: View {
     private var emptyState: some View {
         VStack(spacing: 6) {
             Text("✨").font(.system(size: 26))
-            Text("Nothing needs you").font(.system(size: 13, weight: .semibold))
+            Text("No new activity").font(.system(size: 13, weight: .semibold))
             Text(emptyHint)
                 .font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }

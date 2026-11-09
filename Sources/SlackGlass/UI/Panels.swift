@@ -120,7 +120,7 @@ final class HUDController {
 
     func show(_ ref: ConversationRef? = nil, focus: Bool = true) {
         if let ref { model.open(ref) }
-        // Open on Chats when nothing needs you, on Needs You when something does.
+        // Open on Chats when nothing needs you, on Activity when something needs you.
         if !isVisible {
             model.showChats = model.inbox.isEmpty
             model.showSearch = false
