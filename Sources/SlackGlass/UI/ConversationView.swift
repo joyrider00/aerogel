@@ -295,8 +295,8 @@ struct ReactionPicker: View {
 
     private var results: [String] {
         let q = query.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ": "))
-        if q.isEmpty { return Emoji.quick + Emoji.table.keys.filter { !Emoji.quick.contains($0) }.sorted().prefix(36) }
-        let all = Set(Emoji.table.keys).union(model.customEmoji.keys)
+        if q.isEmpty { return Emoji.quick + Emoji.pickerNames.filter { !Emoji.quick.contains($0) }.prefix(36) }
+        let all = Set(Emoji.pickerNames).union(model.customEmoji.keys)
         return all.filter { $0.contains(q) }.sorted { ($0.hasPrefix(q) ? 0 : 1, $0) < ($1.hasPrefix(q) ? 0 : 1, $1) }.prefix(48).map { $0 }
     }
 

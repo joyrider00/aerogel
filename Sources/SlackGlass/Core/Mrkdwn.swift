@@ -18,7 +18,7 @@ enum Mrkdwn {
         #"(?<![\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])"#,    // 4 bold
         #"(?<![\w_])_(?!\s)([^_\n]+?)_(?![\w_])"#,      // 5 italic
         #"(?<![\w~])~(?!\s)([^~\n]+?)~(?![\w~])"#,      // 6 strike
-        #":([a-zA-Z0-9_+\-']+)(?:::skin-tone-\d)?:"#,   // 7 emoji
+        #":([a-zA-Z0-9_+\-']+(?:::skin-tone-\d)?):"#,   // 7 emoji
     ].joined(separator: "|"))
 
     private static let quoteRegex = try! NSRegularExpression(pattern: #"(?m)^&gt;\s?"#)
