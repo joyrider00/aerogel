@@ -156,7 +156,11 @@ struct MessageRow: View {
                 }
                 if let files = message.files, !files.isEmpty {
                     FlowLayout(spacing: 6) {
-                        ForEach(files) { f in FileView(file: f) }
+                        ForEach(files) { f in
+                            FileView(file: f, place: model.current.map {
+                                AppModel.FilePlace(channel: $0.channel, ts: message.ts, threadTs: message.thread_ts)
+                            })
+                        }
                     }
                 }
                 if let reactions = message.reactions, !reactions.isEmpty {
@@ -332,6 +336,7 @@ struct ReactionPicker: View {
 struct FileView: View {
     @EnvironmentObject var model: AppModel
     let file: SlackFile
+    var place: AppModel.FilePlace?
 
     var body: some View {
         Group {
@@ -364,8 +369,8 @@ struct FileView: View {
                 .glassChip(radius: 10, opacity: 0.08)
             }
         }
-        .onTapGesture { model.openFile(file) }
-        .help(file.isVideo ? "Play video" : file.isImage ? "View image" : "Open in Slack")
+        .onTapGesture { model.openFile(file, at: place) }
+        .help(file.isPDF ? "Open in Preview" : file.isVideo ? "Play video" : file.isImage ? "View image" : "Open in Slack")
     }
 }
 

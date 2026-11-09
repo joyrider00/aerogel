@@ -64,6 +64,7 @@ struct SlackFile: Codable, Hashable, Identifiable {
     var size: Int?
 
     var isVideo: Bool { (mimetype ?? "").hasPrefix("video/") }
+    var isPDF: Bool { filetype == "pdf" || mimetype == "application/pdf" }
     var isImage: Bool { ((mimetype ?? "").hasPrefix("image/") || isVideo) && thumbURL != nil }
     var thumbURL: URL? { (thumb_video ?? thumb_480 ?? thumb_360).flatMap(URL.init(string:)) }
     var displayName: String { title ?? name ?? "file" }

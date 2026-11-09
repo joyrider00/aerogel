@@ -21,7 +21,7 @@ final class ImageCache {
     }
 
     /// Downloads a file to a private temp location (videos, which AVPlayer can't fetch with a token).
-    func download(_ url: URL, ext: String) async -> URL? {
+    func download(_ url: URL, ext: String, name: String? = nil) async -> URL? {
         var req = URLRequest(url: url)
         if let token, let host = url.host, host == "slack.com" || host.hasSuffix(".slack.com") {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -31,7 +31,12 @@ final class ImageCache {
               (resp.mimeType ?? "").hasPrefix("text/html") == false else { return nil }
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("SlackGlass-media", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let dest = dir.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
+        var dest = dir.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
+        if let name, !name.isEmpty { // keep the real file name (it's what Preview shows as the title)
+            let sub = dir.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try? FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+            dest = sub.appendingPathComponent(name.replacingOccurrences(of: "/", with: "-"))
+        }
         do { try FileManager.default.moveItem(at: tmp, to: dest) } catch { return nil }
         return dest
     }

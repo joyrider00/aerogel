@@ -30,7 +30,7 @@ Slack Glass is a small macOS menu-bar app built on Slack's public API. It's free
 - **Schedule, snooze and drafts.** Schedule a message for later. Snooze an item until it matters. Whatever you half-typed in a conversation is still there when you come back.
 - **React, edit, delete and copy links.** Hover a message to get quick reactions and the full emoji picker, including your workspace's custom emoji.
 - **Images, videos and presence.** Click an image to see it full size, or a video to play it right there; you can copy either or save it to Downloads. Green dots show who's online.
-- **Slack links open in the Slack app,** not in a browser tab.
+- **PDFs open in Preview.** Other files, and Slack links, open in the Slack app at the message they were posted in, never in a browser tab.
 - **Slash commands made from files.** Drop `party.gif` into a folder and `/party` sends it.
 - **An optional AI assistant.** Bring your own assistant server and type `/assistant` to have it read a thread or draft a reply. Nothing is sent until you click Send.
 - **Keyboard first.** Every action has a shortcut (see [Shortcuts](#shortcuts)).

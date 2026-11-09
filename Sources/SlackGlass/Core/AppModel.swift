@@ -850,19 +850,86 @@ final class AppModel: ObservableObject {
         if let u = URL(string: s) { NSWorkspace.shared.open(u) }
     }
 
-    /// Images and videos open in Slack Glass's viewer; other files open in the Slack app.
-    func openFile(_ f: SlackFile) {
-        if f.isImage || f.isVideo {
-            ImageViewer.shared.openInSlackHandler = { [weak self] f in self?.openFileInSlack(f.id) }
+    /// Where a file was posted, so "open in Slack" can land on that message.
+    struct FilePlace { let channel: String; let ts: String; let threadTs: String? }
+
+    /// PDFs open in Preview; images and videos in Slack Glass's viewer; anything else in the Slack app,
+    /// at the message it was posted in.
+    func openFile(_ f: SlackFile, at place: FilePlace? = nil) {
+        if f.isPDF {
+            openInPreview(f)
+        } else if f.isImage || f.isVideo {
+            ImageViewer.shared.openInSlackHandler = { [weak self] f in self?.openFileInSlack(f.id, at: place) }
             ImageViewer.shared.show(f)
         } else {
-            openFileInSlack(f.id)
+            openFileInSlack(f.id, at: place)
         }
     }
 
-    /// Straight into the Slack app (slack://), never a browser tab that then redirects.
-    func openFileInSlack(_ fileID: String) {
-        if let u = URL(string: "slack://file?team=\(teamID)&id=\(fileID)") { NSWorkspace.shared.open(u) }
+    /// Downloads the file (it needs your token) and opens it in Preview.
+    func openInPreview(_ f: SlackFile) {
+        guard let url = f.url_private.flatMap(URL.init(string:)) else { return }
+        notice = "Opening \(f.displayName) in Preview…"
+        Task {
+            guard let local = await ImageCache.shared.download(url, ext: "pdf", name: f.name ?? "\(f.displayName).pdf") else {
+                lastError = "Couldn't download \(f.displayName)"
+                return
+            }
+            notice = nil
+            let preview = URL(fileURLWithPath: "/System/Applications/Preview.app")
+            if FileManager.default.fileExists(atPath: preview.path) {
+                _ = try? await NSWorkspace.shared.open([local], withApplicationAt: preview, configuration: NSWorkspace.OpenConfiguration())
+            } else {
+                NSWorkspace.shared.open(local)
+            }
+        }
+    }
+
+    /// Opens the Slack app at the message the file was posted in (Slack's own file link only brings Slack
+    /// forward). Without that context, asks Slack where the file was shared.
+    func openFileInSlack(_ fileID: String, at place: FilePlace? = nil) {
+        if let place { openMessageInSlack(place); return }
+        Task {
+            if let api, let r = try? await api.call("files.info", ["file": fileID, "count": 1]),
+               let file = r["file"] as? [String: Any], let shared = Self.firstShare(file) {
+                openMessageInSlack(shared)
+            } else if let u = URL(string: "slack://file?team=\(teamID)&id=\(fileID)") {
+                NSWorkspace.shared.open(u)
+            }
+        }
+    }
+
+    func openMessageInSlack(_ p: FilePlace) {
+        var s = "slack://channel?team=\(teamID)&id=\(p.channel)&message=\(p.ts)"
+        if let t = p.threadTs, t != p.ts { s += "&thread_ts=\(t)" }
+        if let u = URL(string: s) { NSWorkspace.shared.open(u) }
+    }
+
+    /// files.info → the first conversation and message the file was shared in.
+    private static func firstShare(_ file: [String: Any]) -> FilePlace? {
+        let shares = file["shares"] as? [String: Any] ?? [:]
+        for kind in ["private", "public"] {
+            guard let byChannel = shares[kind] as? [String: Any] else { continue }
+            for (channel, list) in byChannel {
+                if let first = (list as? [[String: Any]])?.first, let ts = first["ts"] as? String {
+                    return FilePlace(channel: channel, ts: ts, threadTs: first["thread_ts"] as? String)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// A file linked in message text: PDFs to Preview, the rest to the Slack app at the message.
+    private func openLinkedFile(_ fileID: String) {
+        Task {
+            if let api, let r = try? await api.call("files.info", ["file": fileID, "count": 1]),
+               let fileJSON = r["file"] as? [String: Any], let f = SlackAPI.decode(SlackFile.self, fileJSON) {
+                if f.isPDF { openInPreview(f); return }
+                openFileInSlack(fileID, at: Self.firstShare(fileJSON))
+            } else {
+                openFileInSlack(fileID)
+            }
+        }
     }
 
     /// For links that aren't in message text (attachment titles): Slack links go to the app, others to the browser.
@@ -1225,7 +1292,7 @@ extension AppModel {
             (p.hasPrefix("F") && p.count >= 9 && p.allSatisfy { $0.isUppercase || $0.isNumber })
         }) ?? parts.first(where: { $0.range(of: #"^T[A-Z0-9]+-F[A-Z0-9]+$"#, options: .regularExpression) != nil })
             .map({ String($0.split(separator: "-")[1]) }) {
-            openFileInSlack(fileID)
+            openLinkedFile(fileID)
             return .handled
         }
         guard let channel else {
