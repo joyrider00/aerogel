@@ -139,7 +139,9 @@ final class DemoWorkspace {
         let ts = SlackTS.now()
         let f = files.map { SlackFile(id: UUID().uuidString, name: $0.lastPathComponent, title: $0.lastPathComponent) }
         let m = SlackMessage(ts: ts, user: user, text: text, thread_ts: ref.threadTs, files: f.isEmpty ? nil : f)
-        store[key(ref), default: messages(ref)].append(m)
+        var list = messages(ref)
+        list.append(m)
+        store[key(ref)] = list
         return m
     }
 

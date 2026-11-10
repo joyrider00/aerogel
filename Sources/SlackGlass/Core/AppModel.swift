@@ -1049,6 +1049,7 @@ final class AppModel: ObservableObject {
             if current == ref { messages.append(m) }
             setDraft("", for: ref)
             clearInbox(channel: ref.channel, threadTs: ref.threadTs)
+            if ref == current { chatPeople = [] }   // the new chat exists now; Chats goes back to search
             return true
         }
         guard let api else { return false }
@@ -1072,6 +1073,7 @@ final class AppModel: ObservableObject {
             clearInbox(channel: ref.channel, threadTs: ref.threadTs)
             setDraft("", for: ref)
             sendTick += 1
+            if ref == current { chatPeople = [] }   // the new chat exists now; Chats goes back to search
             return true
         } catch {
             lastError = error.localizedDescription
