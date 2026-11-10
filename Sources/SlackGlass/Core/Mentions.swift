@@ -9,14 +9,15 @@ struct MentionSuggestion: Identifiable, Hashable {
     var userID: String?
 }
 
+private let mentionRegex = try! NSRegularExpression(pattern: #"(?:^|[\s(])@([\p{L}\p{N}._\-]*(?: [\p{L}\p{N}._\-]+)?)$"#)
+
 extension AppModel {
     /// The "@que" being typed just before the caret, if any: its range in `text` (including the "@") and the query.
     static func mentionToken(in text: String, caret: Int) -> (range: NSRange, query: String)? {
         let ns = text as NSString
         guard caret <= ns.length else { return nil }
         let before = ns.substring(to: caret)
-        guard let re = try? NSRegularExpression(pattern: #"(?:^|[\s(])@([\p{L}\p{N}._\-]*(?: [\p{L}\p{N}._\-]+)?)$"#),
-              let m = re.firstMatch(in: before, range: NSRange(location: 0, length: (before as NSString).length))
+        guard let m = mentionRegex.firstMatch(in: before, range: NSRange(location: 0, length: (before as NSString).length))
         else { return nil }
         let q = (before as NSString).substring(with: m.range(at: 1))
         let at = m.range(at: 1).location - 1

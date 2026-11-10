@@ -77,6 +77,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        model.flushPersist(sync: true)
+    }
+
     /// slackglass://signed-in?… arrives from the browser once Slack approves "Sign in with Slack".
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls where model.completeRelaySignIn(url) {

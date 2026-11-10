@@ -95,13 +95,18 @@ final class AppModel: ObservableObject {
     private(set) var lastActivity: [String: Double] = [:]
     @Published private(set) var activityVersion = 0
     private var activitySaveScheduled = false
+    private var activityBumpScheduled = false
     private var handleIndex: [String: String]?
     private var backfillTask: Task<Void, Never>?
     private var draftSaveWork: DispatchWorkItem?
     @Published var lastError: String?
     @Published private(set) var isDemo = false
 
-    var hudVisible = false
+    var hudVisible = false {
+        // Presence is only polled while the panel is up, so refresh it as soon as it opens.
+        didSet { if hudVisible, !oldValue, Date().timeIntervalSince(lastPresenceSweep) > 30 { refreshPresence() } }
+    }
+    private var lastPresenceSweep = Date.distantPast
     var onNotify: ((InboxItem) -> Void)?
     /// An Activity item was handled somewhere else (another Mac, or your reply): take down its toast and
     /// banner here. `toast` false leaves the toast alone (it may be showing "Sent ✓").
@@ -114,6 +119,10 @@ final class AppModel: ObservableObject {
     private var watchedSet: Set<String> = []
     private var pendingUsers: Set<String> = []
     private var pendingConversations: Set<String> = []
+    /// Lookups Slack refused (deleted, external, bot IDs…): not asked again until the next connect.
+    private var failedLookups: Set<String> = []
+    /// Users that arrived since the last flush; published together so N lookups cause one redraw.
+    private var arrivedUsers: [String: SlackUser] = [:]
     private(set) var demo: DemoWorkspace?
 
     init() {
@@ -145,6 +154,7 @@ final class AppModel: ObservableObject {
 
     /// Connects through the team relay when signed in to one, otherwise through your own Slack app's tokens.
     func connect() {
+        failedLookups = []
         stopDemoIfNeeded()
         socket?.stop()
         socket = nil
@@ -371,23 +381,34 @@ final class AppModel: ObservableObject {
     }
 
     func ensureUser(_ id: String) {
-        guard let api, users[id] == nil, !pendingUsers.contains(id) else { return }
+        guard let api, users[id] == nil, !pendingUsers.contains(id), !failedLookups.contains(id) else { return }
         pendingUsers.insert(id)
         Task {
             if let r = try? await api.call("users.info", ["user": id]), let u = SlackAPI.decode(SlackUser.self, r["user"]) {
-                users[id] = u
+                if arrivedUsers.isEmpty {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                        guard let self, !self.arrivedUsers.isEmpty else { return }
+                        self.users.merge(self.arrivedUsers) { _, new in new }
+                        self.arrivedUsers = [:]
+                    }
+                }
+                arrivedUsers[id] = u
+            } else {
+                failedLookups.insert(id)
             }
             pendingUsers.remove(id)
         }
     }
 
     private func ensureConversation(_ id: String) {
-        guard let api, conversations[id] == nil, !pendingConversations.contains(id) else { return }
+        guard let api, conversations[id] == nil, !pendingConversations.contains(id), !failedLookups.contains(id) else { return }
         pendingConversations.insert(id)
         Task {
             if let r = try? await api.call("conversations.info", ["channel": id]),
                let c = SlackAPI.decode(SlackConversation.self, r["channel"]) {
                 conversations[id] = c
+            } else {
+                failedLookups.insert(id)
             }
             pendingConversations.remove(id)
         }
@@ -614,12 +635,24 @@ final class AppModel: ObservableObject {
         markDone(item)
     }
 
+    /// Saves are coalesced (one per half second at most) and written on a background queue.
     private func persist() {
-        guard !isDemo else { return }
-        Persistence.save(PersistedState(inbox: inbox, watched: watched, recents: recents,
-                                        snoozed: snoozed, drafts: drafts, assistantChats: assistantChats,
-                                        lastActivity: lastActivity))
+        guard !isDemo, !persistScheduled else { return }
+        persistScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.flushPersist() }
     }
+
+    /// Writes now. Also called when the app quits, so nothing waiting to be saved is lost.
+    func flushPersist(sync: Bool = false) {
+        persistScheduled = false
+        guard !isDemo else { return }
+        let state = PersistedState(inbox: inbox, watched: watched, recents: recents,
+                                   snoozed: snoozed, drafts: drafts, assistantChats: assistantChats,
+                                   lastActivity: lastActivity)
+        if sync { Self.saveQueue.sync { Persistence.save(state) } } else { Self.saveQueue.async { Persistence.save(state) } }
+    }
+    private var persistScheduled = false
+    private static let saveQueue = DispatchQueue(label: "slackglass.persist", qos: .utility)
 
     // MARK: - Read state shared between your Macs (through the team relay)
 
@@ -841,10 +874,12 @@ final class AppModel: ObservableObject {
             } else {
                 if let f = focusTs {
                     // Opened from search: the messages around that one, not the latest.
-                    let older = try await api.call("conversations.history",
+                    async let olderCall = api.call("conversations.history",
                                                    ["channel": ref.channel, "latest": f, "inclusive": true, "limit": 30])
-                    let newer = try? await api.call("conversations.history",
+                    async let newerCall = api.call("conversations.history",
                                                     ["channel": ref.channel, "oldest": f, "limit": 30])
+                    let older = try await olderCall
+                    let newer = try? await newerCall
                     let all = SlackAPI.decodeList(SlackMessage.self, older["messages"])
                         + SlackAPI.decodeList(SlackMessage.self, newer?["messages"])
                     var seen = Set<String>()
@@ -855,8 +890,9 @@ final class AppModel: ObservableObject {
                     msgs = SlackAPI.decodeList(SlackMessage.self, r["messages"]).reversed()
                 }
                 if focusTs == nil, let last = msgs.last {
-                    // Keeps the real Slack client's unread state in sync.
-                    _ = try? await api.call("conversations.mark", ["channel": ref.channel, "ts": last.ts])
+                    // Keeps the real Slack client's unread state in sync. Not awaited: the messages show right away.
+                    let ts = last.ts
+                    Task { _ = try? await api.call("conversations.mark", ["channel": ref.channel, "ts": ts]) }
                 }
             }
             guard current == ref else { return }
@@ -1334,7 +1370,14 @@ extension AppModel {
     func noteActivity(_ channel: String, ts: Double) {
         guard ts > (lastActivity[channel] ?? -1) else { return }
         lastActivity[channel] = ts
-        activityVersion += 1
+        // The backfill notes ~150 chats in a row; one redraw every 2 s is plenty for the Chats order.
+        if !activityBumpScheduled {
+            activityBumpScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.activityBumpScheduled = false
+                self?.activityVersion += 1
+            }
+        }
         guard !activitySaveScheduled else { return }
         activitySaveScheduled = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
@@ -1369,7 +1412,8 @@ extension AppModel {
     }
 
     func refreshPresence() {
-        guard api != nil, demo == nil else { return }
+        guard api != nil, demo == nil, hudVisible else { return }
+        lastPresenceSweep = Date()
         var ids: [String] = []
         func add(_ id: String?) { if let id, id != meID, !ids.contains(id) { ids.append(id) } }
         if let cur = current, let c = conversations[cur.channel], c.is_im == true { add(c.user) }
@@ -1382,11 +1426,15 @@ extension AppModel {
     func fetchPresence(_ ids: [String]) {
         guard let api, demo == nil, !ids.isEmpty else { return }
         Task {
+            var found: [String: Bool] = [:]
             for id in ids {
                 if let r = try? await api.call("users.getPresence", ["user": id]) {
-                    presence[id] = (r["presence"] as? String) == "active"
+                    found[id] = (r["presence"] as? String) == "active"
                 }
             }
+            // One update for the whole sweep, and none when nothing changed.
+            let merged = presence.merging(found) { _, new in new }
+            if merged != presence { presence = merged }
         }
     }
 
