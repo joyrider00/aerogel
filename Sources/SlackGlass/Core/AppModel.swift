@@ -52,6 +52,12 @@ final class AppModel: ObservableObject {
     @Published var catchUpCards: [CatchUpCard] = []
     @Published var catchUpIndex = 0
     @Published var catchUpScanning = false
+    /// Catch up's progress through every conversation you're in.
+    @Published var catchUpChecked = 0
+    @Published var catchUpTotal = 0
+    /// Slack's read position per conversation, as last seen by Catch up (this session). A conversation
+    /// with no message since then is known to be read and isn't asked about again.
+    var catchUpReadPos: [String: Double] = [:]
     var catchUpTask: Task<Void, Never>?
     @Published var searchQuery = ""
     @Published var searchResults: [SearchHit] = []

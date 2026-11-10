@@ -11,9 +11,11 @@ struct CatchUpView: View {
                 Text("Catch up").font(.system(size: 12.5, weight: .semibold))
                 if model.catchUpScanning { ProgressView().controlSize(.mini) }
                 Spacer()
-                if !model.catchUpCards.isEmpty, model.catchUpCard != nil {
-                    Text("\(model.catchUpIndex + 1) of \(model.catchUpCards.count)\(model.catchUpScanning ? "+" : "")")
+                if model.catchUpCard != nil {
+                    let left = model.catchUpCards.count - model.catchUpIndex
+                    Text("\(left)\(model.catchUpScanning ? "+" : "") left")
                         .font(.system(size: 10.5, weight: .medium)).foregroundStyle(.secondary).monospacedDigit()
+                        .help(model.catchUpScanning ? "Still checking \(model.catchUpTotal - model.catchUpChecked) more conversations" : "")
                 }
                 IconButton(symbol: "xmark", help: "Back to Activity", size: 10) { model.closeCatchUp() }
             }
@@ -36,7 +38,10 @@ struct CatchUpView: View {
             } else if model.catchUpScanning {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Looking for unread messages…").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text(model.catchUpTotal > 0
+                         ? "Checking your conversations… \(model.catchUpChecked) of \(model.catchUpTotal)"
+                         : "Looking for unread messages…")
+                        .font(.system(size: 12)).foregroundStyle(.secondary).monospacedDigit()
                 }
                 .frame(maxWidth: .infinity, minHeight: 120)
             } else {
