@@ -176,6 +176,16 @@ final class HUDController {
             else { hide() }
             return true
         }
+        // The panel never makes Slack Glass the active app, so the Edit menu doesn't see ⌘C/⌘V/…:
+        // send them straight to whatever has focus (message text, the reply box, search).
+        if flags == .command || flags == [.command, .shift] {
+            let edit: [String: Selector] = [
+                "c": #selector(NSText.copy(_:)), "v": #selector(NSText.paste(_:)), "x": #selector(NSText.cut(_:)),
+                "a": #selector(NSText.selectAll(_:)),
+                "z": flags.contains(.shift) ? Selector(("redo:")) : Selector(("undo:")),
+            ]
+            if let sel = edit[chars], NSApp.sendAction(sel, to: nil, from: panel) { return true }
+        }
         if flags == .command, chars == "k" {
             model.switcherOpen.toggle()
             model.switcherQuery = ""

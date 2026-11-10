@@ -172,12 +172,8 @@ struct MessageRow: View {
                     }
                 }
                 if let text = message.text, !text.isEmpty {
-                    (Text(model.render(text)) + Text(message.edited != nil ? "  (edited)" : "")
-                        .font(.system(size: 10)).foregroundColor(.secondary))
-                        .font(.system(size: 13))
-                        .lineSpacing(2)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                    SelectableText(text: model.render(text), size: 13,
+                                   suffix: message.edited != nil ? "(edited)" : nil) { model.openExternal($0) }
                 }
                 ForEach((message.blocks ?? []).filter(\.isImage), id: \.self) { b in
                     BlockImageView(block: b)
@@ -446,15 +442,15 @@ struct AttachmentView: View {
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 2).fill(.white.opacity(0.3)).frame(width: 3)
             VStack(alignment: .leading, spacing: 2) {
-                if let p = attachment.pretext { Text(model.render(p)).font(.system(size: 12)) }
+                if let p = attachment.pretext { SelectableText(text: model.render(p), size: 12) { model.openExternal($0) } }
                 if let t = attachment.title {
                     Text(t).font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(attachment.title_link != nil ? Mrkdwn.linkColor : .primary)
                         .onTapGesture { if let u = attachment.title_link.flatMap(URL.init(string:)) { model.openExternal(u) } }
                 }
-                if let t = attachment.text { Text(model.render(t)).font(.system(size: 12)).lineLimit(6) }
+                if let t = attachment.text { SelectableText(text: model.render(t), size: 12, maxLines: 6) { model.openExternal($0) } }
                 if attachment.title == nil, attachment.text == nil, let f = attachment.fallback {
-                    Text(model.render(f)).font(.system(size: 12)).lineLimit(4)
+                    SelectableText(text: model.render(f), size: 12, maxLines: 4) { model.openExternal($0) }
                 }
                 if let f = attachment.footer { Text(model.plain(f)).font(.system(size: 10)).foregroundStyle(.secondary) }
             }
