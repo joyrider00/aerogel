@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Tokens live in one private file (`~/Library/Application Support/Slack Glass/secrets.json`, readable only by
@@ -116,6 +117,7 @@ enum NotificationStyle: String, CaseIterable, Identifiable {
 enum PrefKey {
     static let style = "notificationStyle"
     static let sound = "playSound"
+    static let soundName = "soundName"
     static let channelWide = "notifyChannelWide"
     static let keywords = "keywords"
     static let glassTint = "glassTint"
@@ -131,6 +133,14 @@ enum Prefs {
     private static var d: UserDefaults { .standard }
     static var style: NotificationStyle { NotificationStyle(rawValue: d.string(forKey: PrefKey.style) ?? "") ?? .hud }
     static var playSound: Bool { d.object(forKey: PrefKey.sound) as? Bool ?? true }
+    /// macOS's built-in alert sounds, by name. "Pop" is the default.
+    static let sounds = ["Pop", "Glass", "Ping", "Tink", "Purr", "Bottle", "Blow", "Frog", "Funk", "Hero", "Morse", "Submarine", "Sosumi", "Basso"]
+    static var soundName: String { d.string(forKey: PrefKey.soundName).flatMap { sounds.contains($0) ? $0 : nil } ?? "Pop" }
+    static func playSound(_ name: String = soundName) {
+        guard let s = NSSound(named: NSSound.Name(name)) else { return }
+        s.stop()
+        s.play()
+    }
     static var notifyChannelWide: Bool { d.bool(forKey: PrefKey.channelWide) }
     /// What your assistant is called; its slash command is the same word (e.g. "Assistant" → /assistant).
     static var assistantName: String {

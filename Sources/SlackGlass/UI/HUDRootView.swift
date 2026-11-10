@@ -15,6 +15,7 @@ struct HUDRootView: View {
                 if model.switcherOpen {
                     SwitcherView().transition(.move(edge: .top).combined(with: .opacity))
                 }
+                WhatsNewBanner()
                 InboxView()
                 if let err = model.lastError {
                     ErrorBanner(text: err) { model.lastError = nil }
@@ -664,7 +665,9 @@ struct UpdatePill: View {
             }
             .buttonStyle(.plain)
             .fixedSize()
-            .help("Install Slack Glass \(v) and reopen. You stay signed in.")
+            .help(updater.availableNotes.isEmpty
+                  ? "Install Slack Glass \(v) and reopen. You stay signed in."
+                  : "Slack Glass \(v):\n\(updater.availableNotes)\n\nClick to install and reopen. You stay signed in.")
         case .installing:
             HStack(spacing: 4) {
                 ProgressView().controlSize(.mini)
@@ -680,6 +683,28 @@ struct UpdatePill: View {
             .help(msg)
         case .idle:
             EmptyView()
+        }
+    }
+}
+
+/// After an update, a one-time note about what changed. Stays until closed.
+struct WhatsNewBanner: View {
+    @ObservedObject private var updater = Updater.shared
+
+    var body: some View {
+        if let w = updater.whatsNew {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "sparkles").foregroundStyle(.blue)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("New in \(w.version)").font(.system(size: 12, weight: .semibold))
+                    Text(LocalizedStringKey(w.notes)).font(.system(size: 12))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                IconButton(symbol: "xmark", size: 10) { updater.whatsNew = nil }
+            }
+            .padding(12)
+            .glassCard(radius: 16)
         }
     }
 }

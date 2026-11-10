@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @AppStorage(PrefKey.style) private var style = NotificationStyle.hud.rawValue
     @AppStorage(PrefKey.sound) private var sound = true
+    @AppStorage(PrefKey.soundName) private var soundName = "Pop"
     @AppStorage(PrefKey.channelWide) private var channelWide = false
     @AppStorage(PrefKey.keywords) private var keywords = ""
     @AppStorage(PrefKey.glassTint) private var tint = 0.0
@@ -89,6 +90,12 @@ struct SettingsView: View {
                     }
                 }
                 Toggle("Play a sound", isOn: $sound)
+                    .onChange(of: sound) { on in if on { Prefs.playSound() } }
+                Picker("Sound", selection: $soundName) {
+                    ForEach(Prefs.sounds, id: \.self) { Text($0).tag($0) }
+                }
+                .disabled(!sound || style == NotificationStyle.off.rawValue)
+                .onChange(of: soundName) { name in Prefs.playSound(name) }
                 Toggle("Include @here / @channel", isOn: $channelWide)
                 TextField("Keywords", text: $keywords, prompt: Text("deploy, outage, my-project"))
                 Text("You're always notified for DMs, group DMs, @mentions, and replies in threads you've posted in or were mentioned in. Mute Slack's own desktop notifications so you don't get two of each.")

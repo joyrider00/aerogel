@@ -24,7 +24,8 @@ enum SlackManifest {
     static var manifest: [String: Any] {
         [
             "display_information": [
-                "name": "Slack Glass",
+                // Slack shows this name next to every message sent from Slack Glass, so it's kept short.
+                "name": "SG",
                 "description": "A glass HUD for reading and replying to Slack without opening Slack.",
                 "background_color": "#1a1033",
             ],

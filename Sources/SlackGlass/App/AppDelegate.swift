@@ -106,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             .removeDuplicates()
             .sink { [weak self] available in self?.setStatusImage(updateDot: available) }
             .store(in: &bag)
-        Updater.shared.start()
+        Updater.shared.start(existingUser: model.hasTokens)
     }
 
     /// The menu bar icon, with a small blue dot in its corner when an update is ready.
@@ -187,7 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // MARK: - Notifications
 
     private func notify(_ item: InboxItem) {
-        if Prefs.playSound, Prefs.style != .off { NSSound(named: "Pop")?.play() }
+        if Prefs.playSound, Prefs.style != .off { Prefs.playSound() }
         switch Prefs.style {
         case .hud:
             if !hud.isVisible { toasts.show(item) }
