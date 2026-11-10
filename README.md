@@ -25,7 +25,7 @@ Slack Glass is a small macOS menu-bar app built on Slack's public API. It's free
 
 - **Toasts that open in place.** Click a toast and the thread or DM opens in a floating panel with its full history. You can also reply straight from the toast.
 - **An Activity inbox.** DMs, group DMs, @mentions, your keywords, and new replies in threads you've posted in, grouped by thread. Opening an item clears it, and so does replying from anywhere, including Slack itself. With a team server, opening, clearing or snoozing an item on one Mac does the same on all your Macs, toasts and banners included.
-- **Chats.** Browse and search every channel and DM, and use the arrow keys to move through the results. When nothing needs you, this is what you see.
+- **Chats.** Browse and search every channel and DM, and use the arrow keys to move through the results. Type a name and press Enter to open a chat with that person right away; keep typing names to turn it into a group DM. When nothing needs you, this is what you see.
 - **Search.** Search every message you can see in Slack, using Slack's own modifiers (`from:@maya`, `in:#eng`, `has:link`). Open a result and it jumps to that message in its thread or channel.
 - **Reply like Slack.** Enter sends, Shift-Enter adds a new line, and typing `@` suggests people to mention. "Also send to #channel" works too. You can attach files by pasting, by dragging them (screenshots included), or with the paperclip.
 - **Mark unread and Catch up.** Mark a conversation unread (⌘U, or "Mark unread from here" on a message) and it goes back in Activity with a blue dot, counted in blue on the icon so it stands apart from new messages in red. Slack and your other Macs show it unread too. **Catch up**, at the top of Activity, takes you through every channel and chat with unread messages one at a time: → marks it read, ← keeps it, Return opens it.
@@ -112,7 +112,7 @@ Slack Glass talks to Slack through a small private Slack app that **you** create
 - **Toasts** appear when something needs you. Click one to open the thread, type in its reply box to answer without opening anything, or let it fade after 8 seconds.
 - **The panel** has three tabs:
   - **Activity:** the inbox described above.
-  - **Chats:** every channel and DM. Start typing to search, use ↑↓ to pick one, and press Enter to open it.
+  - **Chats:** every channel and DM. Start typing to search, use ↑↓ to pick one, and press Enter to open it. After picking a person, type another name and press Enter to add them (Backspace removes the last one); Enter on an empty box goes to the message box.
   - **Search:** messages across Slack (see [Searching](#searching)).
 - **Opening a conversation** shows it to the left of the inbox. ⌘[ goes back, and Esc closes one layer at a time.
 - Slack Glass **doesn't take focus** from the app you're in until you click into the reply box. Clicking anywhere outside the panel closes it.

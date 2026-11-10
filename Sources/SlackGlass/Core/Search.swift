@@ -76,6 +76,7 @@ extension AppModel {
         searchIndex = 0
         chatQuery = ""
         chatIndex = 0
+        chatPeople = []
         switcherQuery = ""
         switcherIndex = 0
     }

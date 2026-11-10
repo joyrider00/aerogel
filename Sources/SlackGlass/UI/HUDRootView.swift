@@ -439,20 +439,54 @@ struct ChatsList: View {
     @EnvironmentObject var model: AppModel
     @FocusState private var focused: Bool
 
+    /// The key handler recognizes the Chats search box by these.
+    static let placeholders: Set<String> = ["Search channels and people", "Add another person"]
+
     var body: some View {
         let sections = model.chatSections
         let flat = sections.flatMap(\.items)
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
-                TextField("Search channels and people", text: $model.chatQuery)
-                    .textFieldStyle(.plain).font(.system(size: 12.5))
-                    .focused($focused)
-                    .onChange(of: model.chatQuery) { _ in model.chatIndex = 0 }
-                    .onChange(of: focused) { model.chatSearchFocused = $0 }
+            VStack(alignment: .leading, spacing: 6) {
+                if !model.chatPeople.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 4) {
+                            ForEach(model.chatPeople, id: \.self) { u in
+                                HStack(spacing: 3) {
+                                    Text(model.userName(u)).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
+                                    Image(systemName: "xmark").font(.system(size: 7.5, weight: .bold)).foregroundStyle(.secondary)
+                                }
+                                .padding(.horizontal, 7).padding(.vertical, 3)
+                                .background(Capsule().fill(Color.accentColor.opacity(0.35)))
+                                .contentShape(Capsule())
+                                .onTapGesture { model.unpickChatPerson(u) }
+                                .help("Remove \(model.userName(u))")
+                            }
+                        }
+                    }
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: model.chatPeople.isEmpty ? "magnifyingglass" : "plus")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    TextField(model.chatPeople.isEmpty ? "Search channels and people" : "Add another person",
+                              text: $model.chatQuery)
+                        .textFieldStyle(.plain).font(.system(size: 12.5))
+                        .focused($focused)
+                        .onChange(of: model.chatQuery) { _ in model.chatIndex = 0; if focused { model.chatSearchFocused = true } }
+                        .onChange(of: focused) { model.chatSearchFocused = $0 }
+                        // In case the key handler didn't get Return first.
+                        .onSubmit { model.openSelectedChat() }
+                }
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
             .glassChip(radius: 10, opacity: 0.08)
+
+            if !model.chatPeople.isEmpty && model.chatQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+                Text(model.chatPeople.count == 1
+                     ? "Type another name to make it a group chat, or press Return to write a message."
+                     : "Type another name to add them, or press Return to write a message.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .padding(.horizontal, 8).padding(.top, 4)
+            }
 
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
@@ -464,7 +498,7 @@ struct ChatsList: View {
                                 .padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 2)
                             ForEach(section.items) { t in
                                 let idx = model.chatPosition(t.id)
-                                ChatRow(target: t, highlighted: idx == model.chatIndex && model.chatSearchFocused)
+                                ChatRow(target: t, highlighted: idx == model.chatIndex && (model.chatSearchFocused || !model.chatQuery.isEmpty))
                                     .id(t.id)
                             }
                         }
@@ -512,7 +546,7 @@ struct ChatRow: View {
             .fill(.white.opacity(isOpen || highlighted ? 0.18 : hover ? 0.08 : 0)))
         .contentShape(Rectangle())
         .onHover { hover = $0 }
-        .onTapGesture { model.openSwitcherTarget(target) }
+        .onTapGesture { model.pickChat(target) }
     }
 
     @ViewBuilder private var icon: some View {

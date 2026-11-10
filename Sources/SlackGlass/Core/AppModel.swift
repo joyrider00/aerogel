@@ -71,6 +71,8 @@ final class AppModel: ObservableObject {
     /// The conversation open most recently, reopened when the panel comes back.
     private(set) var lastConversation: ConversationRef?
     @Published var chatQuery = ""
+    /// People picked in Chats search so far (user IDs). One opens your DM; more open a group DM with all of them.
+    @Published var chatPeople: [String] = [] { didSet { chatCache = nil } }
     @Published private(set) var recents: [String] = []
     @Published var sendTick = 0
     @Published var chatIndex = 0
@@ -337,7 +339,7 @@ final class AppModel: ObservableObject {
         conversations[channel]?.isDirect ?? channel.hasPrefix("D")
     }
 
-    private func mpimHandles(_ name: String) -> [String] {
+    func mpimHandles(_ name: String) -> [String] {
         var n = name
         if n.hasPrefix("mpdm-") { n.removeFirst(5) }
         if let r = n.range(of: #"-\d+$"#, options: .regularExpression) { n.removeSubrange(r) }
@@ -806,7 +808,10 @@ final class AppModel: ObservableObject {
     /// Bumped whenever a chat is opened or the panel is shown: the conversation jumps to its newest message.
     @Published var scrollToLatestTick = 0
 
-    func open(_ ref: ConversationRef, pushHistory: Bool = true, focus: String? = nil) {
+    /// `fromPicker`: opened by picking people in Chats search, so the search box keeps the keyboard
+    /// (for the next name) and the picked names stay.
+    func open(_ ref: ConversationRef, pushHistory: Bool = true, focus: String? = nil, fromPicker: Bool = false) {
+        if !fromPicker { chatPeople = [] }
         scrollToLatestTick += 1
         if let leaving = current, leaving != ref { keepDraftInActivity(leaving) }
         if current != ref || focus != nil {
@@ -837,7 +842,7 @@ final class AppModel: ObservableObject {
             persist()
         }
         syncRead(ref, upTo: SlackTS.now()) // you're looking at all of it, on every Mac
-        focusComposerTick += 1
+        if !fromPicker { focusComposerTick += 1 }
         if let c = conversations[ref.channel], c.is_im == true, let u = c.user { fetchPresence([u]) }
         Task { await load(ref) }
     }
@@ -875,7 +880,7 @@ final class AppModel: ObservableObject {
     func chatPosition(_ id: String) -> Int { chatData().index[id] ?? -1 }
 
     private func chatData() -> (sections: [ChatSection], index: [String: Int]) {
-        let key = "\(chatQuery)|\(recents.joined(separator: ","))|\(publicChannels.count)|\(activityVersion)"
+        let key = "\(chatQuery)|\(chatPeople.joined(separator: ","))|\(recents.joined(separator: ","))|\(publicChannels.count)|\(activityVersion)"
         if let c = chatCache, c.key == key { return (c.sections, c.index) }
         let sections = buildChatSections()
         var index: [String: Int] = [:]
@@ -886,6 +891,12 @@ final class AppModel: ObservableObject {
 
     private func buildChatSections() -> [ChatSection] {
         let q = chatQuery.trimmingCharacters(in: .whitespaces)
+        if !chatPeople.isEmpty {
+            // Adding to a chat: only people, and not the ones already in it.
+            guard !q.isEmpty else { return [] }
+            let people = results(for: q, limit: 40).filter { t in personID(t).map { !chatPeople.contains($0) } ?? false }
+            return people.isEmpty ? [] : [ChatSection(id: "add", title: "Add to this chat", items: people)]
+        }
         if !q.isEmpty {
             var out = [ChatSection(id: "results", title: "Results", items: results(for: q, limit: 40))]
             let needle = q.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "#"))
@@ -932,11 +943,16 @@ final class AppModel: ObservableObject {
 
     func openSelectedChat() {
         let flat = chatFlat
-        guard flat.indices.contains(chatIndex) else { return }
-        openSwitcherTarget(flat[chatIndex])
+        guard flat.indices.contains(chatIndex) else {
+            // Nothing to pick: Return with people already picked goes on to writing the message.
+            if chatQuery.trimmingCharacters(in: .whitespaces).isEmpty, current != nil { focusComposerTick += 1 }
+            return
+        }
+        pickChat(flat[chatIndex])
     }
 
     func closeConversation() {
+        chatPeople = []
         if let leaving = current { keepDraftInActivity(leaving) }
         assistantMode = false
         history = []

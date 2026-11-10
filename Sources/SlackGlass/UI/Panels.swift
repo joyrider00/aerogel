@@ -159,6 +159,12 @@ final class HUDController {
         panel.setFrame(frame, display: true)
     }
 
+    private var chatSearchHasFocus: Bool {
+        guard let editor = panel.firstResponder as? NSTextView, editor.isFieldEditor,
+              let field = editor.delegate as? NSTextField else { return false }
+        return ChatsList.placeholders.contains(field.placeholderString ?? "")
+    }
+
     /// Returns true when the key was consumed.
     private func handleKey(_ e: NSEvent) -> Bool {
         let flags = e.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -233,11 +239,14 @@ final class HUDController {
             }
         }
 
-        if model.showChats && model.chatSearchFocused {
+        // Asks AppKit what has the keyboard: SwiftUI's focus flag can lag behind (opening a chat
+        // focuses its reply box), which left Return doing nothing on the top result.
+        if model.showChats, chatSearchHasFocus {
             switch e.keyCode {
             case 125: model.moveChatSelection(1); return true
             case 126: model.moveChatSelection(-1); return true
             case 36, 76: model.openSelectedChat(); return true
+            case 51 where model.chatQuery.isEmpty && !model.chatPeople.isEmpty: model.unpickChatPerson(); return true
             default: return false
             }
         }
