@@ -3,6 +3,12 @@ import SwiftUI
 import UserNotifications
 
 struct SettingsView: View {
+    /// True when this build was made with the macOS 26 SDK, so the Liquid Glass look is compiled in.
+    #if compiler(>=6.2)
+    static let hasLiquidGlass = true
+    #else
+    static let hasLiquidGlass = false
+    #endif
     @EnvironmentObject var model: AppModel
     @State private var userToken = Secrets.get(TokenKey.user) ?? ""
     @State private var appToken = Secrets.get(TokenKey.app) ?? ""
@@ -17,6 +23,7 @@ struct SettingsView: View {
     @AppStorage(PrefKey.channelWide) private var channelWide = false
     @AppStorage(PrefKey.keywords) private var keywords = ""
     @AppStorage(PrefKey.glassTint) private var tint = 0.0
+    @AppStorage(PrefKey.liquidGlass) private var liquid = true
     @AppStorage(PrefKey.showBubble) private var showBubble = true
     @AppStorage(PrefKey.assistantURL) private var assistantURL = ""
     @AppStorage(PrefKey.assistantName) private var assistantName = ""
@@ -126,6 +133,9 @@ struct SettingsView: View {
                     Text("Clear").font(.caption)
                 } maximumValueLabel: {
                     Text("Smoky").font(.caption)
+                }
+                if #available(macOS 26.0, *), Self.hasLiquidGlass {
+                    Toggle("Liquid Glass (macOS 26)", isOn: $liquid)
                 }
                 Toggle("Floating bubble (click to open, drag to move)", isOn: $showBubble)
                 LabeledContent("Slash commands") {

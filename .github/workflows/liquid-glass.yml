@@ -1,0 +1,37 @@
+# Test builds with Apple's macOS 26 SDK, so Macs on macOS 26 get real Liquid Glass.
+# Each push to the liquid-glass branch publishes a pre-release. Pre-releases never reach
+# the in-app updater or the install command; download the zip by hand to try one.
+name: Liquid Glass test build
+on:
+  push:
+    branches: [liquid-glass]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Build universal app
+        run: |
+          # Same version as the current release, so the updater doesn't immediately offer to "update" back.
+          BASE=$(gh release view --json tagName -q .tagName | sed 's/^v//')
+          echo "BASE=$BASE" >> "$GITHUB_ENV"
+          VERSION=$BASE scripts/build-app.sh
+          lipo -archs "build/Slack Glass.app/Contents/MacOS/SlackGlass"
+          ditto -c -k --keepParent "build/Slack Glass.app" build/Slack-Glass.zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Publish pre-release
+        run: |
+          TAG="glass-${GITHUB_SHA::7}"
+          gh release create "$TAG" build/Slack-Glass.zip --prerelease --target "$GITHUB_SHA" \
+            --title "Liquid Glass test ${GITHUB_SHA::7} (based on $BASE)" \
+            --notes "Built with the macOS 26 SDK. On macOS 26 the panels use Apple's Liquid Glass; older macOS looks the same as before. Unzip and drag Slack Glass.app into Applications, replacing the old one. You stay signed in."
+        env:
+          GH_TOKEN: ${{ github.token }}
