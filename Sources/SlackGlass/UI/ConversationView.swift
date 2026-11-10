@@ -67,13 +67,36 @@ struct ConversationView: View {
 
     private var messageList: some View {
         ScrollViewReader { proxy in
-            FitScroll {
+            FitScroll(onHeightChange: { _ in
+                // While a just-opened chat settles (images, previews and long messages taking their space),
+                // keep it pinned to the newest message.
+                if settling { scroll(proxy) }
+            }) {
                 messageStack
             }
-            .onChange(of: model.messages.count) { _ in
+            .onChange(of: model.current) { _ in startSettling(proxy) }
+            .onChange(of: model.scrollToLatestTick) { _ in startSettling(proxy) }
+            .onChange(of: model.messages.count) { _ in startSettling(proxy) }
+            .onChange(of: model.messages.last?.id) { _ in
                 withAnimation(.easeOut(duration: 0.2)) { scroll(proxy) }
             }
-            .onAppear { scroll(proxy) }
+            .onAppear { startSettling(proxy) }
+            // Scrolling yourself ends the pinning straight away.
+            .onReceive(NotificationCenter.default.publisher(for: NSScrollView.willStartLiveScrollNotification)) { _ in
+                settleUntil = .distantPast
+            }
+        }
+    }
+
+    @State private var settleUntil = Date.distantPast
+    private var settling: Bool { Date() < settleUntil }
+
+    private func startSettling(_ proxy: ScrollViewProxy) {
+        settleUntil = Date().addingTimeInterval(2.5)
+        scroll(proxy)
+        // Layout lands a frame or two after the messages do; catch those passes too.
+        for delay in [0.05, 0.2, 0.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { if settling { scroll(proxy) } }
         }
     }
 

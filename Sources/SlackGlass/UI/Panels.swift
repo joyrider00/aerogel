@@ -133,6 +133,7 @@ final class HUDController {
         panel.orderFrontRegardless()
         if focus { panel.makeKey() }
         model.hudVisible = true
+        model.scrollToLatestTick += 1
         onVisibilityChange?(true)
         if model.current == nil, model.selectedInboxID == nil { model.selectedInboxID = model.inbox.first?.id }
         model.focusComposerTick += 1

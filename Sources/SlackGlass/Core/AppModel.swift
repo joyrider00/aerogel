@@ -720,7 +720,11 @@ final class AppModel: ObservableObject {
 
     // MARK: - Conversation
 
+    /// Bumped whenever a chat is opened or the panel is shown: the conversation jumps to its newest message.
+    @Published var scrollToLatestTick = 0
+
     func open(_ ref: ConversationRef, pushHistory: Bool = true, focus: String? = nil) {
+        scrollToLatestTick += 1
         if let leaving = current, leaving != ref { keepDraftInActivity(leaving) }
         if current != ref || focus != nil {
             if pushHistory, let cur = current, cur != ref {

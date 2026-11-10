@@ -140,6 +140,8 @@ enum TimeFormat {
 /// Measures once instead of ViewThatFits, which lays the whole list out twice on every redraw.
 struct FitScroll<Content: View>: View {
     var maxHeight: CGFloat = .infinity
+    /// Called whenever the content's height changes (images loading, messages arriving).
+    var onHeightChange: ((CGFloat) -> Void)? = nil
     @ViewBuilder var content: () -> Content
     @State private var height: CGFloat = 1
 
@@ -150,7 +152,10 @@ struct FitScroll<Content: View>: View {
         }
         .frame(maxHeight: min(height, maxHeight))
         .onPreferenceChange(FitHeightKey.self) { h in
-            if abs(h - height) > 0.5 { height = h }
+            if abs(h - height) > 0.5 {
+                height = h
+                onHeightChange?(h)
+            }
         }
     }
 }
