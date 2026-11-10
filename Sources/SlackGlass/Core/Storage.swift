@@ -121,6 +121,7 @@ enum PrefKey {
     static let channelWide = "notifyChannelWide"
     static let keywords = "keywords"
     static let glassTint = "glassTint"
+    static let liquidGlass = "liquidGlass"
     static let showBubble = "showBubble"
     static let assistantURL = "assistantURL"
     static let assistantName = "assistantName"
