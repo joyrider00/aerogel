@@ -115,6 +115,7 @@ struct InboxView: View {
                     .background(Capsule().fill(.purple.opacity(0.5)))
             }
             Spacer()
+            UpdatePill()
             IconButton(symbol: model.pinned ? "pin.fill" : "pin", help: "Keep open when clicking elsewhere") {
                 model.pinned.toggle()
             }
@@ -641,5 +642,44 @@ struct SearchRow: View {
         .contentShape(Rectangle())
         .onHover { hover = $0 }
         .onTapGesture { model.openHit(hit) }
+    }
+}
+
+/// A small blue "Update" pill in the HUD header when a newer build is out. One click installs and reopens.
+struct UpdatePill: View {
+    @ObservedObject private var updater = Updater.shared
+
+    var body: some View {
+        switch updater.state {
+        case .available(let v):
+            Button { updater.install() } label: {
+                HStack(spacing: 4) {
+                    Circle().fill(.white).frame(width: 5, height: 5)
+                    Text("Update").font(.system(size: 10, weight: .semibold)).lineLimit(1)
+                }
+                .fixedSize()
+                .foregroundStyle(.white)
+                .padding(.horizontal, 7).padding(.vertical, 2.5)
+                .background(Capsule().fill(Color.blue))
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help("Install Slack Glass \(v) and reopen. You stay signed in.")
+        case .installing:
+            HStack(spacing: 4) {
+                ProgressView().controlSize(.mini)
+                Text("Updating…").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .fixedSize()
+        case .failed(let msg):
+            Button { updater.check() } label: {
+                Text("Update failed").font(.system(size: 10, weight: .medium)).foregroundStyle(.red).lineLimit(1)
+            }
+            .fixedSize()
+            .buttonStyle(.plain)
+            .help(msg)
+        case .idle:
+            EmptyView()
+        }
     }
 }

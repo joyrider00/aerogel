@@ -101,11 +101,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             .removeDuplicates()
             .sink { [weak self] n in self?.statusItem.button?.title = n > 0 ? " \(n)" : "" }
             .store(in: &bag)
+        Updater.shared.$state
+            .map { if case .available = $0 { return true } else { return false } }
+            .removeDuplicates()
+            .sink { [weak self] available in self?.setStatusImage(updateDot: available) }
+            .store(in: &bag)
+        Updater.shared.start()
+    }
+
+    /// The menu bar icon, with a small blue dot in its corner when an update is ready.
+    private func setStatusImage(updateDot: Bool) {
+        guard let base = NSImage(systemSymbolName: "bubble.left.and.text.bubble.right", accessibilityDescription: "Slack Glass")
+        else { return }
+        guard updateDot else {
+            base.isTemplate = true
+            statusItem.button?.image = base
+            return
+        }
+        let dark = statusItem.button?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let size = base.size
+        let img = NSImage(size: size, flipped: false) { rect in
+            let tinted = base.copy() as! NSImage
+            tinted.lockFocus()
+            (dark ? NSColor.white : NSColor.black).set()
+            NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
+            tinted.unlockFocus()
+            tinted.draw(in: rect)
+            let d: CGFloat = 6.5
+            let dot = NSRect(x: rect.maxX - d + 0.5, y: rect.maxY - d + 0.5, width: d, height: d)
+            NSGraphicsContext.current?.compositingOperation = .clear
+            NSBezierPath(ovalIn: dot.insetBy(dx: -1.2, dy: -1.2)).fill()
+            NSGraphicsContext.current?.compositingOperation = .sourceOver
+            NSColor.systemBlue.setFill()
+            NSBezierPath(ovalIn: dot).fill()
+            return true
+        }
+        img.isTemplate = false
+        statusItem.button?.image = img
+        statusItem.button?.toolTip = "Slack Glass: an update is ready"
     }
 
     @objc private func statusClicked() {
         if NSApp.currentEvent?.type == .rightMouseUp {
             let menu = NSMenu()
+            if case .available(let v) = Updater.shared.state {
+                menu.addItem(withTitle: "Update to \(v)", action: #selector(installUpdate), keyEquivalent: "").target = self
+                menu.addItem(.separator())
+            }
             menu.addItem(withTitle: "Show HUD  ⌃⌥Space", action: #selector(toggleHUD), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Settings…", action: #selector(openSettingsAction), keyEquivalent: ",").target = self
             menu.addItem(.separator())
@@ -120,10 +162,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc private func toggleHUD() {
         toasts.clear()
+        Updater.shared.checkSoon()
         hud.toggle()
     }
 
     @objc private func openSettingsAction() { openSettings() }
+    @objc private func installUpdate() { Updater.shared.install() }
 
     func openSettings() {
         if settingsWindow == nil {

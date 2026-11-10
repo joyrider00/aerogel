@@ -47,6 +47,8 @@ curl -fsSL https://slack-glass-relay.yourteam.workers.dev/install | bash
 
 Slack Glass opens. Click **Sign in with Slack**, then **Allow**. That's all. Do the same on each of your Macs; every Mac you're signed in on gets every message.
 
+After that, updates come to you: when a new version is out, a small blue dot appears on the menu bar icon and an **Update** button shows at the top of the panel. Click it and Slack Glass updates and reopens, still signed in.
+
 **Otherwise**, build the app yourself. It takes about two minutes and needs no programming knowledge.
 
 **Requirements:** macOS 13 Ventura or newer, and Apple's free command-line developer tools.
