@@ -7,10 +7,11 @@ import SwiftUI
 struct GlassBackground: View {
     var radius: CGFloat
     @AppStorage(PrefKey.glassTint) private var tint = 0.0
+    @AppStorage(PrefKey.liquidGlass) private var liquid = true
 
     var body: some View {
         #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, *), liquid {
             Color.black.opacity(tint * 0.6)
                 .glassEffect(.regular, in: .rect(cornerRadius: radius))
         } else {
