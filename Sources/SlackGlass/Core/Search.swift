@@ -81,6 +81,7 @@ extension AppModel {
     }
 
     func openSearch() {
+        closeCatchUp()
         showSearch = true
         searchFocusTick += 1
     }

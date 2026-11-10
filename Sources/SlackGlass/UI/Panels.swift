@@ -186,6 +186,16 @@ final class HUDController {
         if flags == .command, chars == "f" { model.openSearch(); return true }
         if flags == .command, chars == "[" { model.goBack(); return true }
         if flags == .command, chars == "o" { model.openInSlack(); return true }
+        if flags == .command, chars == "u", let ref = model.current { model.markUnread(ref); return true }
+        // Catch up: → mark read, ← keep unread, Return opens it.
+        if model.showCatchUp, model.current == nil, !editingText, flags.isDisjoint(with: [.command, .option, .control]) {
+            switch e.keyCode {
+            case 124: model.catchUpMarkRead(); return true
+            case 123: model.catchUpSkip(); return true
+            case 36, 76: model.catchUpOpen(); return true
+            default: break
+            }
+        }
         if flags.contains(.option), e.keyCode == 125 || e.keyCode == 126 {
             model.moveSelection(e.keyCode == 125 ? 1 : -1)
             model.openSelected()

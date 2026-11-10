@@ -100,10 +100,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             b.action = #selector(statusClicked)
             b.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
+        // New messages in the normal menu bar color; things you marked unread in blue after them.
         model.$inbox
-            .map { $0.filter { !$0.seen }.count }
+            .map { (items: [InboxItem]) -> [Int] in
+                [items.filter { !$0.seen && !$0.isMarkedUnread }.count, items.filter { $0.isMarkedUnread }.count]
+            }
             .removeDuplicates()
-            .sink { [weak self] n in self?.statusItem.button?.title = n > 0 ? " \(n)" : "" }
+            .sink { [weak self] (counts: [Int]) in
+                let new = counts[0], marked = counts[1]
+                let t = NSMutableAttributedString()
+                let font = NSFont.menuBarFont(ofSize: 0)
+                if new > 0 { t.append(NSAttributedString(string: " \(new)", attributes: [.font: font])) }
+                if marked > 0 {
+                    t.append(NSAttributedString(string: " \(marked)", attributes: [.font: font, .foregroundColor: NSColor.systemBlue]))
+                }
+                self?.statusItem.button?.attributedTitle = t
+            }
             .store(in: &bag)
         Updater.shared.$state
             .map { if case .available = $0 { return true } else { return false } }

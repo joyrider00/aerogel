@@ -213,7 +213,7 @@ async function toUserHub(req: Request, url: URL, env: Env): Promise<Response> {
 type Account = { token: string; user_id: string; team_id: string };
 type Buffered = { seq: number; at: number; event_id: string; event: unknown };
 /// One Mac handled an Activity item: "read" (opened, done, cleared) up to `ts`, or "snooze" until `until`.
-type Mark = { op: "read" | "snooze"; id: string; channel: string; thread_ts: string | null; ts: string; until?: number; item?: unknown; at: number };
+type Mark = { op: "read" | "snooze" | "unread"; id: string; channel: string; thread_ts: string | null; ts: string; until?: number; item?: unknown; at: number };
 
 export class UserHub extends DurableObject<Env> {
   private async account(): Promise<Account | undefined> { return this.ctx.storage.get<Account>("account"); }
@@ -320,11 +320,13 @@ function cleanMark(m: any): Mark | null {
   const channel = str(m?.channel), ts = str(m?.ts);
   const thread = m?.thread_ts == null ? null : str(m.thread_ts);
   if (!channel || !ts || (m?.thread_ts != null && !thread)) return null;
-  if (m.op !== "read" && m.op !== "snooze") return null;
+  if (m.op !== "read" && m.op !== "snooze" && m.op !== "unread") return null;
   const mark: Mark = { op: m.op, id: `${channel}:${thread ?? ""}`, channel, thread_ts: thread, ts, at: Date.now() / 1000 };
   if (m.op === "snooze") {
     if (typeof m.until !== "number" || !isFinite(m.until)) return null;
     mark.until = m.until;
+  }
+  if (m.op === "snooze" || m.op === "unread") {
     if (m.item && typeof m.item === "object" && JSON.stringify(m.item).length < 8_000) mark.item = m.item;
   }
   return mark;

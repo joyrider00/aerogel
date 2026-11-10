@@ -110,6 +110,22 @@ final class DemoWorkspace {
         return hits.sorted { $0.date > $1.date }
     }
 
+    /// Catch up in the demo: the channels and DMs, plus a quiet #random with a few new messages.
+    func catchUpCards() -> [CatchUpCard] {
+        let random = [
+            SlackMessage(ts: Self.ago(140), user: "USAM", text: "Who's bringing snacks to the offsite? :popcorn:"),
+            SlackMessage(ts: Self.ago(120), user: "UPRIYA", text: "I can grab bagels"),
+            SlackMessage(ts: Self.ago(95), user: "UALEX", text: "Bagels + coffee from the place on 3rd, please :pray:"),
+        ]
+        var cards = [CatchUpCard(channel: "CRANDOM", messages: random)]
+        for c in ["CENG", "DALEX", "DPRIYA"] {
+            if let m = store[key(.init(channel: c, threadTs: nil))], !m.isEmpty {
+                cards.append(CatchUpCard(channel: c, messages: Array(m.filter { $0.user != "UME" }.suffix(4))))
+            }
+        }
+        return cards
+    }
+
     func messages(_ ref: ConversationRef) -> [SlackMessage] {
         if let m = store[key(ref)] { return m }
         if let t = ref.threadTs,

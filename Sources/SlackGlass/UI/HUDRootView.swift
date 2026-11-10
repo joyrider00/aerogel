@@ -66,16 +66,21 @@ struct InboxView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
-            if model.showSearch {
+            if model.showCatchUp {
+                CatchUpView()
+            } else if model.showSearch {
                 SearchView()
             } else if model.showChats {
                 ChatsList()
-            } else if model.inbox.isEmpty {
-                emptyState
             } else {
-                FitScroll(maxHeight: 620) { rows }
+                CatchUpEntry()
+                if model.inbox.isEmpty {
+                    emptyState
+                } else {
+                    FitScroll(maxHeight: 620) { rows }
+                }
             }
-            if !model.showChats && !model.showSearch && !model.snoozed.isEmpty {
+            if !model.showChats && !model.showSearch && !model.showCatchUp && !model.snoozed.isEmpty {
                 Menu {
                     ForEach(model.snoozed) { s in
                         Button("\(model.userName(s.user)): \(model.plain(s.text).prefix(40))  ·  \(AppModel.shortDate(s.snoozeUntil ?? Date()))") {
@@ -102,10 +107,12 @@ struct InboxView: View {
             Circle().fill(statusColor).frame(width: 7, height: 7).help(statusHelp)
             tab("ACTIVITY" + (model.inbox.isEmpty ? "" : " \(model.inbox.count)"),
                 selected: !model.showChats && !model.showSearch) {
+                model.closeCatchUp()
                 model.showChats = false
                 model.showSearch = false
             }
             tab("CHATS", selected: model.showChats && !model.showSearch) {
+                model.closeCatchUp()
                 model.showChats = true
                 model.showSearch = false
                 model.chatQuery = ""
@@ -229,14 +236,17 @@ struct InboxRow: View {
                     .font(.system(size: 12)).foregroundStyle(.primary.opacity(0.88))
                     .lineLimit(2)
             }
-            .opacity(item.seen && !selected ? 0.7 : 1)
+            .opacity(item.seen && !item.isMarkedUnread && !selected ? 0.7 : 1)
             if hover {
                 VStack(spacing: 0) {
                     IconButton(symbol: "checkmark", help: "Done (E)", size: 11) { model.markDone(item) }
                     SnoozeMenu(item: item)
                 }
+            } else if item.isMarkedUnread {
+                Circle().fill(Color.blue).frame(width: 7, height: 7).padding(.top, 4)
+                    .help("Marked unread")
             } else if !item.seen {
-                Circle().fill(Color.accentColor).frame(width: 7, height: 7).padding(.top, 4)
+                Circle().fill(Color.newBadge).frame(width: 7, height: 7).padding(.top, 4)
             }
         }
         .padding(8)
@@ -253,6 +263,9 @@ struct InboxRow: View {
         .contextMenu {
             Button("Open") { model.open(item.ref) }
             Button("Mark done") { model.markDone(item) }
+            if !item.isMarkedUnread {
+                Button("Mark unread") { model.markUnread(item) }
+            }
             Menu("Snooze") {
                 ForEach(AppModel.snoozeOptions(), id: \.label) { o in
                     Button(o.label) { model.snooze(item, until: o.date) }

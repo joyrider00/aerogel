@@ -41,6 +41,11 @@ struct ConversationView: View {
                 Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
+            if let ref = model.current {
+                IconButton(symbol: "envelope.badge", help: "Mark unread (⌘U): back in Activity with a blue dot") {
+                    model.markUnread(ref)
+                }
+            }
             IconButton(symbol: "arrow.up.forward.app", help: "Open in Slack (⌘O): huddles, canvases, everything else") {
                 model.openInSlack()
             }
@@ -276,6 +281,9 @@ struct MessageRow: View {
         Button("Copy text") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(model.plain(message.text ?? ""), forType: .string)
+        }
+        if let ref = model.current {
+            Button("Mark unread from here") { model.markUnread(ref, from: message) }
         }
         Button("Copy link") { model.copyLink(message) }
         Button("Open in Slack") { model.openInSlack() }

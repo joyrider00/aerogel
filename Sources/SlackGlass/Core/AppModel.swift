@@ -47,6 +47,12 @@ final class AppModel: ObservableObject {
     @Published var showChats = false
     // Message search (the SEARCH tab).
     @Published var showSearch = false
+    // Catch up (see CatchUp.swift)
+    @Published var showCatchUp = false
+    @Published var catchUpCards: [CatchUpCard] = []
+    @Published var catchUpIndex = 0
+    @Published var catchUpScanning = false
+    var catchUpTask: Task<Void, Never>?
     @Published var searchQuery = ""
     @Published var searchResults: [SearchHit] = []
     @Published var searchTotal = 0
@@ -148,7 +154,10 @@ final class AppModel: ObservableObject {
         Relay.isSignedIn || (!(Secrets.get(TokenKey.user) ?? "").isEmpty && !(Secrets.get(TokenKey.app) ?? "").isEmpty)
     }
 
-    var unseenCount: Int { inbox.filter { !$0.seen }.count }
+    /// New messages: the red badge.
+    var unseenCount: Int { inbox.filter { !$0.seen && !$0.isMarkedUnread }.count }
+    /// Things you marked unread to come back to: the blue badge.
+    var markedUnreadCount: Int { inbox.filter(\.isMarkedUnread).count }
 
     // MARK: - Connection
 
@@ -564,6 +573,7 @@ final class AppModel: ObservableObject {
             item.text = msg.previewText
             item.count += 1
             item.seen = false
+            item.markedUnread = nil
             if reason.priority > item.reason.priority { item.reason = reason }
         } else {
             item = InboxItem(channel: channel, threadTs: threadTs, ts: msg.ts, user: msg.user, text: msg.previewText, reason: reason)
@@ -574,7 +584,7 @@ final class AppModel: ObservableObject {
         return item
     }
 
-    private func clearInbox(channel: String, threadTs: String?) {
+    func clearInbox(channel: String, threadTs: String?) {
         let before = inbox.count
         inbox.removeAll { $0.channel == channel && $0.threadTs == threadTs }
         if inbox.count != before { persist() }
@@ -588,6 +598,56 @@ final class AppModel: ObservableObject {
             selectedInboxID = inbox.indices.contains(idx) ? inbox[idx].id : inbox.last?.id
         }
         persist()
+    }
+
+    /// Like Slack's "Mark unread": the conversation goes back in Activity with a blue dot, from this message on.
+    /// Slack itself shows it unread too, and so do your other Macs.
+    func markUnread(_ ref: ConversationRef, from message: SlackMessage? = nil) {
+        let id = InboxItem.makeID(ref.channel, ref.threadTs)
+        let viewing = current == ref ? messages : []
+        let m = message ?? viewing.last
+        var item = inbox.first(where: { $0.id == id }) ?? openedFromActivity[id]
+            ?? InboxItem(channel: ref.channel, threadTs: ref.threadTs, ts: m?.ts ?? SlackTS.now(), user: m?.user,
+                         text: m?.previewText ?? "", reason: reasonFor(ref))
+        if let m {
+            item.ts = m.ts
+            item.user = m.user
+            item.text = m.previewText
+        }
+        item.seen = true
+        item.markedUnread = true
+        item.snoozeUntil = nil
+        if current == ref { closeConversation() }
+        openedFromActivity[id] = nil
+        inbox.removeAll { $0.id == id }
+        snoozed.removeAll { $0.id == id }
+        inbox.insert(item, at: 0)
+        selectedInboxID = id
+        persist()
+        syncUnread(item)
+
+        // Slack's own unread line: everything from this message on. (Threads have no read position in the API.)
+        guard ref.threadTs == nil, let api, demo == nil else { return }
+        let before = viewing.last(where: { (Double($0.ts) ?? 0) < (Double(item.ts) ?? 0) })?.ts
+            ?? String(format: "%.6f", (Double(item.ts) ?? 0) - 0.000001)
+        Task { _ = try? await api.call("conversations.mark", ["channel": ref.channel, "ts": before]) }
+    }
+
+    func markUnread(_ item: InboxItem) {
+        if let i = inbox.firstIndex(where: { $0.id == item.id }) {
+            inbox[i].markedUnread = true
+            inbox[i].seen = true
+            persist()
+            syncUnread(inbox[i])
+        } else {
+            markUnread(item.ref)
+        }
+    }
+
+    private func reasonFor(_ ref: ConversationRef) -> InboxReason {
+        if ref.threadTs != nil { return .thread }
+        if conversations[ref.channel]?.is_im == true { return .dm }
+        return isDirect(ref.channel) ? .group : .channel
     }
 
     func clearAll() {
@@ -656,9 +716,16 @@ final class AppModel: ObservableObject {
 
     // MARK: - Read state shared between your Macs (through the team relay)
 
-    private func syncRead(_ ref: ConversationRef, upTo ts: String) {
+    func syncRead(_ ref: ConversationRef, upTo ts: String) {
         guard !isDemo, let relay = socket as? RelayClient else { return }
         relay.sendMark(["op": "read", "channel": ref.channel, "thread_ts": ref.threadTs ?? NSNull(), "ts": ts])
+    }
+
+    private func syncUnread(_ item: InboxItem) {
+        guard !isDemo, let relay = socket as? RelayClient else { return }
+        var mark: [String: Any] = ["op": "unread", "channel": item.channel, "thread_ts": item.threadTs ?? NSNull(), "ts": item.ts]
+        if let d = try? JSONEncoder().encode(item), let obj = try? JSONSerialization.jsonObject(with: d) { mark["item"] = obj }
+        relay.sendMark(mark)
     }
 
     /// `until` in the past = woken early.
@@ -678,6 +745,22 @@ final class AppModel: ObservableObject {
             let id = InboxItem.makeID(channel, m["thread_ts"] as? String)
             let covered = { (i: InboxItem) in i.id == id && (Double(i.ts) ?? 0) <= upTo }
             switch m["op"] as? String {
+            case "unread":
+                // Marked unread on another Mac: same blue dot here. (Opening it anywhere sends a read, which replaces this.)
+                if inbox.contains(where: { $0.id == id && $0.isMarkedUnread }) { continue }
+                var item = inbox.first(where: { $0.id == id })
+                if item == nil, let obj = m["item"], let d = try? JSONSerialization.data(withJSONObject: obj) {
+                    item = try? JSONDecoder().decode(InboxItem.self, from: d)
+                }
+                guard var item else { continue }
+                item.markedUnread = true
+                item.seen = true
+                item.snoozeUntil = nil
+                inbox.removeAll { $0.id == id }
+                snoozed.removeAll { $0.id == id }
+                inbox.insert(item, at: 0)
+                changed = true
+                continue
             case "read":
                 guard inbox.contains(where: covered) || snoozed.contains(where: covered) else { continue }
                 inbox.removeAll(where: covered)

@@ -28,6 +28,7 @@ Slack Glass is a small macOS menu-bar app built on Slack's public API. It's free
 - **Chats.** Browse and search every channel and DM, and use the arrow keys to move through the results. When nothing needs you, this is what you see.
 - **Search.** Search every message you can see in Slack, using Slack's own modifiers (`from:@maya`, `in:#eng`, `has:link`). Open a result and it jumps to that message in its thread or channel.
 - **Reply like Slack.** Enter sends, Shift-Enter adds a new line, and typing `@` suggests people to mention. "Also send to #channel" works too. You can attach files by pasting, by dragging them (screenshots included), or with the paperclip.
+- **Mark unread and Catch up.** Mark a conversation unread (⌘U, or "Mark unread from here" on a message) and it goes back in Activity with a blue dot, counted in blue on the icon so it stands apart from new messages in red. Slack and your other Macs show it unread too. **Catch up**, at the top of Activity, takes you through every channel and chat with unread messages one at a time: → marks it read, ← keeps it, Return opens it.
 - **Schedule, snooze and drafts.** Schedule a message for later. Snooze an item until it matters. Whatever you half-typed in a conversation is still there when you come back.
 - **React, edit, delete and copy links.** Hover a message to get quick reactions and the full emoji picker, including your workspace's custom emoji.
 - **Images, videos and presence.** Click an image to see it full size, or a video to play it right there; you can copy either or save it to Downloads. Green dots show who's online.
@@ -151,6 +152,8 @@ Hover an inbox item and click the moon to snooze it for 20 minutes, 1 hour, 3 ho
 | ⌘F | Search messages |
 | ⌘[ | Back |
 | ⌘O | Open the current conversation in Slack |
+| ⌘U | Mark the current conversation unread |
+| → / ← / Enter | In Catch up: mark read / keep unread / open |
 | ⌘W | Close the panel |
 | Esc | Back out one layer: picker → assistant → edit → conversation → close |
 

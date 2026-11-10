@@ -43,6 +43,7 @@ struct ReasonPill: View {
     private var color: Color {
         switch reason {
         case .dm: .pink
+        case .channel: .gray
         case .group: .orange
         case .mention: .blue
         case .thread: .purple
@@ -163,4 +164,9 @@ struct FitScroll<Content: View>: View {
 private struct FitHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+extension Color {
+    /// New messages (the red badge and dot). Marked-unread items use plain blue.
+    static let newBadge = Color(red: 1, green: 0.25, blue: 0.4)
 }

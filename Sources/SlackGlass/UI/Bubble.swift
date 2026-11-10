@@ -138,9 +138,19 @@ private struct BubbleView: View {
                     .font(.system(size: 8.5, weight: .bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 3.5).frame(minWidth: 14, minHeight: 14)
-                    .background(Capsule().fill(Color(red: 1, green: 0.25, blue: 0.4)))
+                    .background(Capsule().fill(Color.newBadge))
                     .overlay(Capsule().strokeBorder(.white.opacity(0.5)))
                     .offset(x: 3, y: -3)
+            }
+            if model.markedUnreadCount > 0 {
+                // Blue: things you marked unread to come back to (red is new messages).
+                Text("\(min(model.markedUnreadCount, 99))")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 3.5).frame(minWidth: 14, minHeight: 14)
+                    .background(Capsule().fill(Color.blue))
+                    .overlay(Capsule().strokeBorder(.white.opacity(0.5)))
+                    .offset(x: 3, y: 15)   // bottom-right of the 26 pt circle
             }
         }
         .scaleEffect(bump ? 1.15 : (hover ? 1.06 : 1))

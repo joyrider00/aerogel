@@ -178,6 +178,8 @@ struct SlackMessage: Codable, Hashable, Identifiable {
 
 enum InboxReason: String, Codable {
     case dm, group, mention, thread, keyword
+    /// A channel you marked unread yourself.
+    case channel
 
     var label: String {
         switch self {
@@ -186,6 +188,7 @@ enum InboxReason: String, Codable {
         case .mention: "@you"
         case .thread: "Thread"
         case .keyword: "Keyword"
+        case .channel: "Channel"
         }
     }
 
@@ -195,7 +198,7 @@ enum InboxReason: String, Codable {
         case .mention: 3
         case .group: 2
         case .keyword: 1
-        case .thread: 0
+        case .thread, .channel: 0
         }
     }
 }
@@ -216,6 +219,10 @@ struct InboxItem: Codable, Identifiable, Hashable {
     var count: Int = 1
     var seen: Bool = false
     var snoozeUntil: Date?
+    /// You marked it unread ("come back to this"): a blue dot instead of red.
+    var markedUnread: Bool?
+
+    var isMarkedUnread: Bool { markedUnread == true }
 
     static func makeID(_ channel: String, _ threadTs: String?) -> String { "\(channel):\(threadTs ?? "")" }
     var id: String { Self.makeID(channel, threadTs) }
