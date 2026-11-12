@@ -123,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             .sink { [weak self] available in self?.setStatusImage(updateDot: available) }
             .store(in: &bag)
         Updater.shared.start(existingUser: model.hasTokens)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { CommandSync.syncSoon() }
     }
 
     /// The menu bar icon, with a small blue dot in its corner when an update is ready.
@@ -179,6 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc private func toggleHUD() {
         toasts.clear()
         Updater.shared.checkSoon()
+        CommandSync.syncSoon()
         hud.toggle()
     }
 

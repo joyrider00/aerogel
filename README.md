@@ -173,7 +173,7 @@ Every file in `~/Library/Application Support/Slack Glass/Commands/` becomes a co
 | `nope.mp4` | `/nope` | Uploads the video |
 | `standup.txt` | `/standup` | Sends the file's text (handy for saved replies) |
 
-Words after the command are sent along as a caption, for example `/shipit finally`. To open the folder, go to Settings → General → **Open Commands folder**. You don't need to restart after adding files.
+Words after the command are sent along as a caption, for example `/shipit finally`. To open the folder, go to Settings → General → **Open Commands folder**. You don't need to restart after adding files. If you signed in with Slack through a team server, the folder syncs across all your Macs: add, change or delete a file on one and the others follow within a minute of opening the panel.
 
 ### `/assistant`
 

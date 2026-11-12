@@ -48,6 +48,7 @@ export default {
     const url = new URL(req.url);
     const route = `${req.method} ${url.pathname}`;
     try {
+      if (url.pathname.startsWith("/v1/commands")) return commandsRoute(req, url, env);
       switch (route) {
         case "GET /": return html(landingPage(url.origin, env));
         case "GET /setup": return html(setupPage(url.origin, env));
@@ -210,6 +211,57 @@ async function toUserHub(req: Request, url: URL, env: Env): Promise<Response> {
   }
 }
 
+// MARK: - Slash command files, shared between one person's Macs
+
+const COMMAND_MAX_BYTES = 15 * 1024 * 1024;
+const COMMAND_MAX_FILES = 60;
+const COMMAND_CHUNK = 1024 * 1024; // SQLite-backed Durable Object values top out at 2 MB
+
+function commandFileName(raw: string): string | null {
+  const name = decodeURIComponent(raw);
+  return /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}\.[A-Za-z0-9]{1,8}$/.test(name) ? name : null;
+}
+
+/// GET /v1/commands lists them; GET/PUT/DELETE /v1/commands/<file> reads, saves or removes one.
+async function commandsRoute(req: Request, url: URL, env: Env): Promise<Response> {
+  const session = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  const [team, user] = session.split(".");
+  if (!team || !user) return json({ error: "signed_out" }, 401);
+  const stub = hub(env, team, user);
+  const sessionHash = await sha256(session);
+  const rest = url.pathname.slice("/v1/commands".length).replace(/^\//, "");
+  if (!rest) {
+    if (req.method !== "GET") return json({ error: "method" }, 405);
+    const list = await stub.commandList(sessionHash);
+    return list ? json(list) : json({ error: "signed_out" }, 401);
+  }
+  const file = commandFileName(rest);
+  if (!file) return json({ error: "bad_name" }, 400);
+  switch (req.method) {
+    case "GET": {
+      const r = await stub.commandGet(sessionHash, file);
+      if (r === "signed_out") return json({ error: "signed_out" }, 401);
+      if (!r) return json({ error: "not_found" }, 404);
+      return new Response(r, { headers: { "content-type": "application/octet-stream" } });
+    }
+    case "PUT": {
+      const hash = req.headers.get("x-hash") ?? "";
+      if (!/^[0-9a-f]{64}$/.test(hash)) return json({ error: "bad_hash" }, 400);
+      const body = await req.arrayBuffer();
+      if (body.byteLength === 0 || body.byteLength > COMMAND_MAX_BYTES) return json({ error: "too_big" }, 413);
+      const r = await stub.commandPut(sessionHash, file, body, hash);
+      return r === "ok" ? json({ ok: true }) : json({ error: r }, r === "signed_out" ? 401 : 400);
+    }
+    case "DELETE": {
+      const r = await stub.commandDelete(sessionHash, file);
+      return r === "ok" ? json({ ok: true }) : json({ error: r }, 401);
+    }
+  }
+  return json({ error: "method" }, 405);
+}
+
+type CommandMeta = { file: string; size: number; hash: string; at: number; chunks: number };
+
 type Account = { token: string; user_id: string; team_id: string };
 type Buffered = { seq: number; at: number; event_id: string; event: unknown };
 /// One Mac handled an Activity item: "read" (opened, done, cleared) up to `ts`, or "snooze" until `until`.
@@ -237,6 +289,62 @@ export class UserHub extends DurableObject<Env> {
     // Last Mac signed out: forget the token entirely.
     if (Object.keys(s).length === 0) await this.ctx.storage.deleteAll();
     else await this.ctx.storage.put("sessions", s);
+  }
+
+  private async signedIn(sessionHash: string): Promise<boolean> {
+    return Boolean((await this.sessions())[sessionHash]);
+  }
+
+  async commandList(sessionHash: string): Promise<{ files: Omit<CommandMeta, "chunks">[]; deleted: { file: string; at: number }[] } | null> {
+    if (!(await this.signedIn(sessionHash))) return null;
+    const files = [...(await this.ctx.storage.list<CommandMeta>({ prefix: "cmd:" })).values()]
+      .map(({ file, size, hash, at }) => ({ file, size, hash, at }));
+    const deleted = [...(await this.ctx.storage.list<{ file: string; at: number }>({ prefix: "cmddel:" })).values()];
+    return { files, deleted };
+  }
+
+  async commandGet(sessionHash: string, file: string): Promise<ArrayBuffer | null | "signed_out"> {
+    if (!(await this.signedIn(sessionHash))) return "signed_out";
+    const meta = await this.ctx.storage.get<CommandMeta>(`cmd:${file}`);
+    if (!meta) return null;
+    const out = new Uint8Array(meta.size);
+    let at = 0;
+    for (let i = 0; i < meta.chunks; i++) {
+      const c = await this.ctx.storage.get<ArrayBuffer>(`cmdc:${file}:${i}`);
+      if (!c) return null;
+      out.set(new Uint8Array(c), at);
+      at += c.byteLength;
+    }
+    return out.buffer;
+  }
+
+  async commandPut(sessionHash: string, file: string, body: ArrayBuffer, hash: string): Promise<string> {
+    if (!(await this.signedIn(sessionHash))) return "signed_out";
+    const existing = await this.ctx.storage.get<CommandMeta>(`cmd:${file}`);
+    if (!existing && (await this.ctx.storage.list({ prefix: "cmd:" })).size >= COMMAND_MAX_FILES) return "too_many";
+    await this.removeChunks(file, existing);
+    const chunks = Math.ceil(body.byteLength / COMMAND_CHUNK);
+    for (let i = 0; i < chunks; i++) {
+      await this.ctx.storage.put(`cmdc:${file}:${i}`, body.slice(i * COMMAND_CHUNK, (i + 1) * COMMAND_CHUNK));
+    }
+    await this.ctx.storage.put(`cmd:${file}`, { file, size: body.byteLength, hash, at: Date.now() / 1000, chunks });
+    await this.ctx.storage.delete(`cmddel:${file}`);
+    return "ok";
+  }
+
+  async commandDelete(sessionHash: string, file: string): Promise<string> {
+    if (!(await this.signedIn(sessionHash))) return "signed_out";
+    const existing = await this.ctx.storage.get<CommandMeta>(`cmd:${file}`);
+    await this.removeChunks(file, existing);
+    await this.ctx.storage.delete(`cmd:${file}`);
+    await this.ctx.storage.put(`cmddel:${file}`, { file, at: Date.now() / 1000 });
+    return "ok";
+  }
+
+  private async removeChunks(file: string, meta: CommandMeta | undefined): Promise<void> {
+    if (!meta) return;
+    const keys = Array.from({ length: meta.chunks }, (_, i) => `cmdc:${file}:${i}`);
+    for (let i = 0; i < keys.length; i += 128) await this.ctx.storage.delete(keys.slice(i, i + 128));
   }
 
   async revoke(): Promise<void> {
