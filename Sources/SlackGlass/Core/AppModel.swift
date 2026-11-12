@@ -102,6 +102,11 @@ final class AppModel: ObservableObject {
     var onShowHUD: ((ConversationRef) -> Void)?
     private var assistantChats: [String: String] = [:]
     private var timers: [Timer] = []
+    /// Checking Activity against Slack's read state (ReadSync.swift).
+    var readSyncRunning = false
+    var lastReadSync = Date.distantPast
+    /// Items just marked unread: left alone for a moment while Slack catches up.
+    var readSyncHold: [String: Date] = [:]
     private var renderCache: [String: AttributedString] = [:]
     private var plainCache: [String: String] = [:]
     private var chatCache: (key: String, sections: [ChatSection], index: [String: Int])?
@@ -118,7 +123,10 @@ final class AppModel: ObservableObject {
 
     var hudVisible = false {
         // Presence is only polled while the panel is up, so refresh it as soon as it opens.
-        didSet { if hudVisible, !oldValue, Date().timeIntervalSince(lastPresenceSweep) > 30 { refreshPresence() } }
+        didSet {
+            if hudVisible, !oldValue, Date().timeIntervalSince(lastPresenceSweep) > 30 { refreshPresence() }
+            if hudVisible, !oldValue { reconcileReadsWithSlack() }
+        }
     }
     private var lastPresenceSweep = Date.distantPast
     var onNotify: ((InboxItem) -> Void)?
@@ -155,6 +163,9 @@ final class AppModel: ObservableObject {
         })
         timers.append(Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshPresence() }
+        })
+        timers.append(Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.reconcileReadsWithSlack(force: true) }
         })
     }
 
@@ -301,7 +312,9 @@ final class AppModel: ObservableObject {
     private func socketStatus(_ s: SocketModeClient.Status) {
         switch s {
         case .connecting: if connection != .connected { connection = .connecting }
-        case .connected: connection = .connected
+        case .connected:
+            connection = .connected
+            reconcileReadsWithSlack(force: true)   // whatever you read in Slack while this Mac was away
         case .disconnected(let why): connection = .failed("Reconnecting… (\(why))")
         }
     }
@@ -600,6 +613,7 @@ final class AppModel: ObservableObject {
 
     func markDone(_ item: InboxItem) {
         syncRead(item.ref, upTo: item.ts)
+        markReadInSlack(item.ref, upTo: item.ts)
         let idx = inbox.firstIndex(of: item)
         inbox.removeAll { $0.id == item.id }
         if selectedInboxID == item.id, let idx {
@@ -625,6 +639,7 @@ final class AppModel: ObservableObject {
         item.seen = true
         item.markedUnread = true
         item.snoozeUntil = nil
+        readSyncHold[id] = Date()
         if current == ref { closeConversation() }
         openedFromActivity[id] = nil
         inbox.removeAll { $0.id == id }
@@ -642,6 +657,7 @@ final class AppModel: ObservableObject {
     }
 
     func markUnread(_ item: InboxItem) {
+        readSyncHold[item.id] = Date()
         if let i = inbox.firstIndex(where: { $0.id == item.id }) {
             inbox[i].markedUnread = true
             inbox[i].seen = true
@@ -659,7 +675,10 @@ final class AppModel: ObservableObject {
     }
 
     func clearAll() {
-        inbox.forEach { syncRead($0.ref, upTo: $0.ts) }
+        inbox.forEach {
+            syncRead($0.ref, upTo: $0.ts)
+            markReadInSlack($0.ref, upTo: $0.ts)
+        }
         inbox.removeAll()
         persist()
     }
@@ -702,6 +721,8 @@ final class AppModel: ObservableObject {
         guard let item = inbox.first(where: { $0.id == selectedInboxID }) else { return }
         markDone(item)
     }
+
+    func persistSoon() { persist() }
 
     /// Saves are coalesced (one per half second at most) and written on a background queue.
     private func persist() {
@@ -761,6 +782,7 @@ final class AppModel: ObservableObject {
                     item = try? JSONDecoder().decode(InboxItem.self, from: d)
                 }
                 guard var item else { continue }
+                readSyncHold[id] = Date()
                 item.markedUnread = true
                 item.seen = true
                 item.snoozeUntil = nil
@@ -980,6 +1002,7 @@ final class AppModel: ObservableObject {
             if let t = ref.threadTs {
                 let r = try await api.call("conversations.replies", ["channel": ref.channel, "ts": t, "limit": 300])
                 msgs = SlackAPI.decodeList(SlackMessage.self, r["messages"])
+                if let last = msgs.last, last.ts != t { markReadInSlack(ref, upTo: last.ts) }   // Slack's thread too
             } else {
                 if let f = focusTs {
                     // Opened from search: the messages around that one, not the latest.

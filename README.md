@@ -24,7 +24,7 @@ Slack Glass is a small macOS menu-bar app built on Slack's public API. It's free
 ## What you get
 
 - **Toasts that open in place.** Click a toast and the thread or DM opens in a floating panel with its full history. You can also reply straight from the toast.
-- **An Activity inbox.** DMs, group DMs, @mentions, your keywords, and new replies in threads you've posted in, grouped by thread. Opening an item clears it, and so does replying from anywhere, including Slack itself. With a team server, opening, clearing or snoozing an item on one Mac does the same on all your Macs, toasts and banners included.
+- **An Activity inbox.** DMs, group DMs, @mentions, your keywords, and new replies in threads you've posted in, grouped by thread. Read state stays in step with Slack. Opening or clearing an item marks it read in Slack, and reading it in Slack (desktop, web or phone) or replying from anywhere clears it here within a minute. With a team server, opening, clearing or snoozing an item on one Mac does the same on all your Macs, toasts and banners included.
 - **Chats.** Browse and search every channel and DM, and use the arrow keys to move through the results. Type a name and press Enter to open a chat with that person right away; keep typing names to turn it into a group DM. When nothing needs you, this is what you see.
 - **Search.** Search every message you can see in Slack, using Slack's own modifiers (`from:@maya`, `in:#eng`, `has:link`). Open a result and it jumps to that message in its thread or channel.
 - **Reply like Slack.** Enter sends, Shift-Enter adds a new line, and typing `@` suggests people to mention. "Also send to #channel" works too. You can attach files by pasting, by dragging them (screenshots included), or with the paperclip.
